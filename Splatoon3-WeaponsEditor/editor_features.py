@@ -452,15 +452,25 @@ class EditorFeaturesMixin:
             new_dict = TreeHandler.build_dict(self.tree_w.invisibleRootItem())
             self.pack_manager.byml_files[self.current_byml_name] = new_dict
 
-        default_save_path = self.pack_manager.pack_path
-        path, _ = QFileDialog.getSaveFileName(self, t("msg_save_title"), default_save_path, "ZSTD (*.pack.zs)")
+        base_dir = os.path.dirname(self.pack_manager.pack_path)
+
+        suggested_path = os.path.join(base_dir, "Params.pack.zs")
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, 
+            t("msg_save_title"), 
+            suggested_path, 
+            "ZSTD (*.zs)" 
+        )
         
         if path:
-            set_last_dir(path)
+            selected_dir = os.path.dirname(path)
+            final_path = os.path.join(selected_dir, "Params.pack.zs")
+            set_last_dir(final_path)
             QApplication.processEvents()
-            s, msg = self.pack_manager.save_pack(path)
+            s, msg = self.pack_manager.save_pack(final_path)
             if s:
-                self.pack_manager.pack_path = path
+                self.pack_manager.pack_path = final_path
                 QMessageBox.information(self, t("success_title"), t("msg_save_success"))
             else:
                 QMessageBox.critical(self, t("err_title"), msg)
