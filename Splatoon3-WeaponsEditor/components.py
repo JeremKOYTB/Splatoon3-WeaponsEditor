@@ -3,6 +3,7 @@ import copy
 import requests
 import concurrent.futures
 import re
+import darkdetect
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QTreeWidget, QTreeWidgetItem, QPushButton, 
@@ -319,18 +320,44 @@ class TypeEnforcedDelegate(QStyledItemDelegate):
         if not val_type: return None
         
         log(f"[EDIT] Opening editor for value of type '{val_type}'.")
+        
+        is_dark = darkdetect.isDark()
+        bg_popup = "#FFFFFF" if not is_dark else "#121212"
+        # Fond gris léger uniquement pour la cellule en cours d'édition
+        bg_edit = "#E5E5E5" if not is_dark else "#3A3A3A" 
+        fg = "#000000" if not is_dark else "#FFFFFF"
+        
+        editor = None
         if val_type == "int":
             editor = QSpinBox(parent)
             editor.setRange(-2147483648, 2147483647)
-            return editor
-        elif val_type == "float":
-            return QLineEdit(parent)
+            editor.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        elif val_type == "float" or val_type == "str":
+            editor = QLineEdit(parent)
         elif val_type == "bool":
             editor = QComboBox(parent)
             editor.addItems(["True", "False"])
+            
+        if editor:
+            editor.setStyleSheet(f"""
+                QLineEdit, QSpinBox, QComboBox {{
+                    background-color: {bg_edit};
+                    color: {fg};
+                    border: none;
+                    padding: 0px;
+                    margin: 0px;
+                    selection-background-color: #0078D7;
+                    selection-color: white;
+                }}
+                QComboBox QAbstractItemView {{
+                    background-color: {bg_popup};
+                    color: {fg};
+                    border: 1px solid #444;
+                    selection-background-color: #0078D7;
+                    selection-color: white;
+                }}
+            """)
             return editor
-        elif val_type == "str":
-            return QLineEdit(parent)
         return None
 
     def setEditorData(self, editor, index):
