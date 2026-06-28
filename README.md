@@ -2,6 +2,8 @@
 
 A simple tool to edit, compare, and balance Splatoon 3 weapons for fun! It lets you change current game parameters (BGYML) and will soon support "RSDB" Editing.
 
+<img width="3242" height="2065" alt="image" src="https://github.com/user-attachments/assets/a20f32cb-ac92-4e36-acb4-fff6415914d9" />
+
 ---
 
 ## ⚠️ Critical Warning: Online Safety & Bannable Risks
