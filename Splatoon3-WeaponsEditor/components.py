@@ -26,7 +26,20 @@ class DiffDialog(QDialog):
         self.resize(1200, 700)
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
         self.ref_pack = ref_pack
+        self.diff_results = diff_results
         
+        self.modifications_main = set()
+        self.modifications_ref = set()
+        self.backup_main = {}
+        self.backup_ref = {}
+
+        if parent and hasattr(parent, 'pack_manager'):
+            for fname in diff_results.keys():
+                if fname in parent.pack_manager.byml_files:
+                    self.backup_main[fname] = copy.deepcopy(parent.pack_manager.byml_files[fname])
+                if fname in self.ref_pack.byml_files:
+                    self.backup_ref[fname] = copy.deepcopy(self.ref_pack.byml_files[fname])
+
         layout = QVBoxLayout(self)
         
         lbl = QLabel(t("diff_desc"))
@@ -120,32 +133,15 @@ class DiffDialog(QDialog):
             for path, cur_val, ref_val, path_tuple in diffs:
                 diff_item = QTreeWidgetItem(file_item)
                 diff_item.setText(0, path)
-                diff_item.setText(1, str(cur_val)) 
-                diff_item.setText(2, str(ref_val)) 
+                
+                diff_item.setText(1, t("diff_deleted") if cur_val is MISSING else str(cur_val)) 
+                diff_item.setText(2, t("diff_deleted") if ref_val is MISSING else str(ref_val)) 
                 diff_item.setData(0, Qt.ItemDataRole.UserRole, path_tuple)
                 
                 diff_item.setForeground(1, QBrush(QColor("#55efc4")))
                 diff_item.setForeground(2, QBrush(QColor("#ff7675"))) 
                 
-                if isinstance(ref_val, (int, float)) and isinstance(cur_val, (int, float)):
-                    try:
-                        r_num = float(ref_val)
-                        c_num = float(cur_val)
-                        if r_num != 0:
-                            pct = ((c_num - r_num) / abs(r_num)) * 100
-                            diff_item.setText(3, f"{pct:+.6f}%")
-                        else:
-                            if c_num == 0:
-                                diff_item.setText(3, "0.000000%")
-                            else:
-                                diff_item.setText(3, "+∞%" if c_num > 0 else "-∞%")
-                                
-                        pct_color = "#55efc4" if c_num > r_num else "#ff7675"
-                        diff_item.setForeground(3, QBrush(QColor(pct_color)))
-                    except (ValueError, TypeError):
-                        diff_item.setText(3, "-")
-                else:
-                    diff_item.setText(3, "-")
+                self._update_diff_percent(diff_item, cur_val, ref_val)
                     
             file_item.setExpanded(True)
             
@@ -167,13 +163,45 @@ class DiffDialog(QDialog):
         """)
         btn_forwardport.clicked.connect(self.on_forwardport_clicked)
         btn_layout.addWidget(btn_forwardport)
+
+        btn_reset = QPushButton(t("diff_btn_reset"))
+        btn_reset.setStyleSheet("""
+            QPushButton { background-color: #7f8c8d; color: white; font-weight: bold; padding: 10px; border-radius: 4px; }
+            QPushButton:hover { background-color: #95a5a6; }
+        """)
+        btn_reset.clicked.connect(self.on_reset_clicked)
+        btn_layout.addWidget(btn_reset)
         
         btn_close = QPushButton(t("diff_btn_close"))
-        btn_close.clicked.connect(self.accept)
+        btn_close.clicked.connect(self.close)
         btn_close.setMinimumHeight(35)
         btn_layout.addWidget(btn_close)
         
         layout.addLayout(btn_layout)
+
+    def _update_diff_percent(self, item, cur_val, ref_val):
+        """Calcule et affiche le pourcentage de différence"""
+        if isinstance(ref_val, (int, float)) and isinstance(cur_val, (int, float)):
+            try:
+                r_num = float(ref_val)
+                c_num = float(cur_val)
+                if r_num != 0:
+                    pct = ((c_num - r_num) / abs(r_num)) * 100
+                    item.setText(3, f"{pct:+.6f}%")
+                else:
+                    if c_num == 0:
+                        item.setText(3, "0.000000%")
+                    else:
+                        item.setText(3, "+∞%" if c_num > 0 else "-∞%")
+                        
+                pct_color = "#55efc4" if c_num > r_num else "#ff7675"
+                item.setForeground(3, QBrush(QColor(pct_color)))
+            except (ValueError, TypeError):
+                item.setText(3, "-")
+                item.setForeground(3, QBrush(QColor("white")))
+        else:
+            item.setText(3, "-")
+            item.setForeground(3, QBrush(QColor("white")))
 
     def on_context_menu(self, pos):
         item = self.tree.itemAt(pos)
@@ -217,6 +245,14 @@ class DiffDialog(QDialog):
             else:
                 cur[path_tuple[-1]] = value
 
+    def update_item_state_text(self, item, state_text=""):
+        """Retire proprement les anciens tags et ajoute le nouveau si fourni."""
+        text = item.text(0)
+        text = text.replace(t("diff_restored"), "").replace(t("diff_forwarded"), "")
+        if state_text:
+            text += state_text
+        item.setText(0, text)
+
     def on_retroport_clicked(self):
         item = self.tree.currentItem()
         if not item:
@@ -227,28 +263,39 @@ class DiffDialog(QDialog):
         if not parent_win: return
 
         if item.parent() is None:
+            # Rétroportage complet d'un fichier entier
             fname = item.toolTip(0)
             if fname in self.ref_pack.byml_files:
                 parent_win.pack_manager.byml_files[fname] = copy.deepcopy(self.ref_pack.byml_files[fname])
+            elif fname in parent_win.pack_manager.byml_files:
+                del parent_win.pack_manager.byml_files[fname]
                 
-                item.setBackground(0, QColor("#27ae60"))
-                if t("diff_restored").strip() not in item.text(0):
-                    item.setText(0, item.text(0) + t("diff_restored"))
-                    
-                for i in range(item.childCount()):
-                    child = item.child(i)
-                    for col in range(4): child.setBackground(col, QColor("#27ae60"))
-                    
-                if parent_win.current_byml_name == fname:
-                    parent_win.load_byml_to_ui(fname)
-                    
+            self.modifications_main.add(fname)
+            self.update_item_state_text(item, t("diff_restored"))
+            for col in range(4): item.setBackground(col, QColor("#27ae60"))
+            
+            for i in range(item.childCount()):
+                child = item.child(i)
+                self.update_item_state_text(child, t("diff_restored"))
+                for col in range(4): child.setBackground(col, QColor("#27ae60"))
+                
+                path_tuple = child.data(0, Qt.ItemDataRole.UserRole)
+                ref_val = self._get_nested_value(self.ref_pack.byml_files.get(fname, {}), path_tuple)
+                
+                val_str = t("diff_deleted") if ref_val is MISSING else str(ref_val)
+                child.setText(1, val_str)
+                child.setText(3, "0.000000%")
+                child.setForeground(3, QBrush(QColor("white")))
+                
+            if parent_win.current_byml_name == fname:
+                parent_win.load_byml_to_ui(fname)
+                
         else:
             file_node = item.parent()
             fname = file_node.toolTip(0)
             path_tuple = item.data(0, Qt.ItemDataRole.UserRole)
             
             if not path_tuple: return
-            
             ref_val = self._get_nested_value(self.ref_pack.byml_files.get(fname, {}), path_tuple)
             
             if fname not in parent_win.pack_manager.byml_files:
@@ -256,13 +303,15 @@ class DiffDialog(QDialog):
                 
             self._set_nested_value(parent_win.pack_manager.byml_files[fname], path_tuple, copy.deepcopy(ref_val))
             
+            self.modifications_main.add(fname)
+            self.update_item_state_text(item, t("diff_restored"))
             for col in range(4):
                 item.setBackground(col, QColor("#27ae60"))
-                item.setForeground(col, QBrush(QColor("white")))
             
             val_str = t("diff_deleted") if ref_val is MISSING else str(ref_val)
             item.setText(1, val_str)
             item.setText(3, "0.000000%")
+            item.setForeground(3, QBrush(QColor("white")))
             
             if parent_win.current_byml_name == fname:
                 parent_win.load_byml_to_ui(fname)
@@ -280,21 +329,32 @@ class DiffDialog(QDialog):
             fname = item.toolTip(0)
             if fname in parent_win.pack_manager.byml_files:
                 self.ref_pack.byml_files[fname] = copy.deepcopy(parent_win.pack_manager.byml_files[fname])
+            elif fname in self.ref_pack.byml_files:
+                del self.ref_pack.byml_files[fname]
                 
-                item.setBackground(0, QColor("#3498db"))
-                if t("diff_forwarded").strip() not in item.text(0):
-                    item.setText(0, item.text(0) + t("diff_forwarded"))
-                    
-                for i in range(item.childCount()):
-                    child = item.child(i)
-                    for col in range(4): child.setBackground(col, QColor("#3498db"))
+            self.modifications_ref.add(fname)
+            self.update_item_state_text(item, t("diff_forwarded"))
+            for col in range(4): item.setBackground(col, QColor("#3498db"))
+                
+            for i in range(item.childCount()):
+                child = item.child(i)
+                self.update_item_state_text(child, t("diff_forwarded"))
+                for col in range(4): child.setBackground(col, QColor("#3498db"))
+                
+                path_tuple = child.data(0, Qt.ItemDataRole.UserRole)
+                cur_val = self._get_nested_value(parent_win.pack_manager.byml_files.get(fname, {}), path_tuple)
+                
+                val_str = t("diff_deleted") if cur_val is MISSING else str(cur_val)
+                child.setText(2, val_str)
+                child.setText(3, "0.000000%")
+                child.setForeground(3, QBrush(QColor("white")))
+                
         else:
             file_node = item.parent()
             fname = file_node.toolTip(0)
             path_tuple = item.data(0, Qt.ItemDataRole.UserRole)
             
             if not path_tuple: return
-            
             current_val = self._get_nested_value(parent_win.pack_manager.byml_files.get(fname, {}), path_tuple)
             
             if fname not in self.ref_pack.byml_files:
@@ -302,13 +362,169 @@ class DiffDialog(QDialog):
                 
             self._set_nested_value(self.ref_pack.byml_files[fname], path_tuple, copy.deepcopy(current_val))
             
+            self.modifications_ref.add(fname)
+            self.update_item_state_text(item, t("diff_forwarded"))
             for col in range(4):
                 item.setBackground(col, QColor("#3498db"))
-                item.setForeground(col, QBrush(QColor("white")))
             
             val_str = t("diff_deleted") if current_val is MISSING else str(current_val)
             item.setText(2, val_str)
             item.setText(3, "0.000000%")
+            item.setForeground(3, QBrush(QColor("white")))
+
+    def on_reset_clicked(self):
+        item = self.tree.currentItem()
+        if not item:
+            QMessageBox.warning(self, t("err_title"), t("diff_err_select"))
+            return
+
+        parent_win = self.parent()
+        if not parent_win: return
+
+        if item.parent() is None:
+            fname = item.toolTip(0)
+
+            if fname in self.backup_main:
+                parent_win.pack_manager.byml_files[fname] = copy.deepcopy(self.backup_main[fname])
+            elif fname in parent_win.pack_manager.byml_files:
+                del parent_win.pack_manager.byml_files[fname]
+
+            if fname in self.backup_ref:
+                self.ref_pack.byml_files[fname] = copy.deepcopy(self.backup_ref[fname])
+            elif fname in self.ref_pack.byml_files:
+                del self.ref_pack.byml_files[fname]
+
+            if fname in self.modifications_main: self.modifications_main.remove(fname)
+            if fname in self.modifications_ref: self.modifications_ref.remove(fname)
+
+            self.update_item_state_text(item, "")
+            bg_color = QColor(255, 255, 255, 15)
+
+            for i in range(item.childCount()):
+                child = item.child(i)
+                self.update_item_state_text(child, "")
+                for col in range(4): child.setBackground(col, QBrush(bg_color))
+
+                path_tuple = child.data(0, Qt.ItemDataRole.UserRole)
+                
+                orig_main = self._get_nested_value(self.backup_main.get(fname, {}), path_tuple) if fname in self.backup_main else MISSING
+                orig_ref = self._get_nested_value(self.backup_ref.get(fname, {}), path_tuple) if fname in self.backup_ref else MISSING
+                
+                child.setText(1, t("diff_deleted") if orig_main is MISSING else str(orig_main))
+                child.setText(2, t("diff_deleted") if orig_ref is MISSING else str(orig_ref))
+                self._update_diff_percent(child, orig_main, orig_ref)
+
+            for col in range(4): item.setBackground(col, QBrush(bg_color))
+
+            if parent_win.current_byml_name == fname:
+                parent_win.load_byml_to_ui(fname)
+        else:
+            file_node = item.parent()
+            fname = file_node.toolTip(0)
+            path_tuple = item.data(0, Qt.ItemDataRole.UserRole)
+            if not path_tuple: return
+
+            orig_main = self._get_nested_value(self.backup_main.get(fname, {}), path_tuple) if fname in self.backup_main else MISSING
+            orig_ref = self._get_nested_value(self.backup_ref.get(fname, {}), path_tuple) if fname in self.backup_ref else MISSING
+            
+            self._set_nested_value(parent_win.pack_manager.byml_files.get(fname, {}), path_tuple, copy.deepcopy(orig_main))
+            self._set_nested_value(self.ref_pack.byml_files.get(fname, {}), path_tuple, copy.deepcopy(orig_ref))
+
+            self.update_item_state_text(item, "")
+            bg_color = QColor(255, 255, 255, 15)
+            for col in range(4): item.setBackground(col, QBrush(bg_color))
+
+            item.setText(1, t("diff_deleted") if orig_main is MISSING else str(orig_main))
+            item.setText(2, t("diff_deleted") if orig_ref is MISSING else str(orig_ref))
+            self._update_diff_percent(item, orig_main, orig_ref)
+
+            if parent_win.current_byml_name == fname:
+                parent_win.load_byml_to_ui(fname)
+
+    def closeEvent(self, event):
+        if not self.modifications_main and not self.modifications_ref:
+            event.accept()
+            return
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle(t("msg_diff_summary_title"))
+        msg.setIcon(QMessageBox.Icon.Question)
+
+        desc = t("msg_diff_summary_desc") + "\n\n"
+        if self.modifications_main:
+            desc += t("msg_diff_main_pack") + "\n" + "\n".join([f"- {f}" for f in self.modifications_main]) + "\n\n"
+        if self.modifications_ref:
+            desc += t("msg_diff_ref_pack") + "\n" + "\n".join([f"- {f}" for f in self.modifications_ref]) + "\n"
+
+        msg.setText(desc.strip())
+        btn_save = msg.addButton(t("btn_save"), QMessageBox.ButtonRole.AcceptRole)
+        btn_discard = msg.addButton(t("btn_discard"), QMessageBox.ButtonRole.DestructiveRole)
+        btn_cancel = msg.addButton(QMessageBox.StandardButton.Cancel)
+
+        msg.exec()
+        clicked = msg.clickedButton()
+
+        if clicked == btn_save:
+            self.save_modifications()
+            event.accept()
+        elif clicked == btn_discard:
+            self.revert_all()
+            event.accept()
+        else:
+            event.ignore()
+
+    def revert_all(self):
+        parent_win = self.parent()
+        if not parent_win: return
+        for fname in self.modifications_main:
+            if fname in self.backup_main:
+                parent_win.pack_manager.byml_files[fname] = copy.deepcopy(self.backup_main[fname])
+            elif fname in parent_win.pack_manager.byml_files:
+                del parent_win.pack_manager.byml_files[fname]
+
+        for fname in self.modifications_ref:
+            if fname in self.backup_ref:
+                self.ref_pack.byml_files[fname] = copy.deepcopy(self.backup_ref[fname])
+            elif fname in self.ref_pack.byml_files:
+                del self.ref_pack.byml_files[fname]
+
+        if hasattr(parent_win, 'current_byml_name') and parent_win.current_byml_name:
+            parent_win.load_byml_to_ui(parent_win.current_byml_name)
+
+    def _silent_save(self, pack_mgr):
+        path = getattr(pack_mgr, 'filepath', getattr(pack_mgr, 'archive_path', getattr(pack_mgr, 'file_path', None)))
+        if not path: return False
+        for method_name in ['save_pack', 'save_archive', 'repack', 'save']:
+            if hasattr(pack_mgr, method_name):
+                method = getattr(pack_mgr, method_name)
+                try:
+                    method(path)
+                    return True
+                except TypeError:
+                    try:
+                        method()
+                        return True
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+        return False
+
+    def save_modifications(self):
+        parent_win = self.parent()
+        saved = False
+
+        if self.modifications_main and parent_win and hasattr(parent_win, 'pack_manager'):
+            saved = self._silent_save(parent_win.pack_manager) or saved
+
+        if self.modifications_ref:
+            saved = self._silent_save(self.ref_pack) or saved
+
+        if not saved and hasattr(parent_win, 'save_repack'):
+            parent_win.save_repack()
+
+        if hasattr(parent_win, 'refresh_file_list'):
+            parent_win.refresh_file_list()
 
 
 class TypeEnforcedDelegate(QStyledItemDelegate):
@@ -323,7 +539,6 @@ class TypeEnforcedDelegate(QStyledItemDelegate):
         
         is_dark = darkdetect.isDark()
         bg_popup = "#FFFFFF" if not is_dark else "#121212"
-        # Fond gris léger uniquement pour la cellule en cours d'édition
         bg_edit = "#E5E5E5" if not is_dark else "#3A3A3A" 
         fg = "#000000" if not is_dark else "#FFFFFF"
         
