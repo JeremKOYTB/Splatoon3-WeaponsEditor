@@ -452,6 +452,15 @@ class EditorFeaturesMixin:
             new_dict = TreeHandler.build_dict(self.tree_w.invisibleRootItem())
             self.pack_manager.byml_files[self.current_byml_name] = new_dict
 
+        if hasattr(self.pack_manager, 'deleted_files'):
+            try:
+                if hasattr(self.pack_manager, 'sarc') and hasattr(self.pack_manager.sarc, 'files'):
+                    if isinstance(self.pack_manager.sarc.files, dict):
+                        for df in self.pack_manager.deleted_files:
+                            if df in self.pack_manager.sarc.files:
+                                del self.pack_manager.sarc.files[df]
+            except Exception: pass
+
         base_dir = os.path.dirname(self.pack_manager.pack_path)
 
         suggested_path = os.path.join(base_dir, "Params.pack.zs")

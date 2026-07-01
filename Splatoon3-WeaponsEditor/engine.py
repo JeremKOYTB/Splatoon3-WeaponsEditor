@@ -9,6 +9,7 @@ class SplatoonPackManager:
         self.pack_path = None
         self.sarc = None
         self.byml_files = {}
+        self.deleted_files = set()
 
     def load_pack(self, path):
         log(f"[ENGINE] Request to load archive: {path}")
@@ -23,6 +24,7 @@ class SplatoonPackManager:
             self.sarc = oead.Sarc(decompressed_sarc_data)
             
             self.byml_files.clear()
+            self.deleted_files.clear()
             count = 0
             
             for file in self.sarc.get_files():
@@ -45,6 +47,12 @@ class SplatoonPackManager:
         log(f"[ENGINE] Request to REPACK archive to: {new_path}")
         try:
             sarc_writer = oead.SarcWriter.from_sarc(self.sarc)
+            
+            if hasattr(self, 'deleted_files'):
+                for deleted_fname in self.deleted_files:
+                    if deleted_fname in sarc_writer.files:
+                        del sarc_writer.files[deleted_fname]
+                        log(f"[ENGINE] 🗑️ Zombie file eradicated from SARC: {deleted_fname}")
             
             for file_name, byml_data in self.byml_files.items():
                 stream = io.BytesIO()
