@@ -79,7 +79,7 @@ You do not need a powerful computer, but it must be running at least Windows 10.
 **3. Modifying weapons**
  * Change the desired values. For example:
    * **Damage:** Edit the "Damage" (ValueMax/ValueMin) fields.
-   * **Ink Consumption:** Look for the corresponding ink usage fields.
+   * **Ink Consumption:** Look for the corresponding ink usage fields ("InkConsume").
    * **Fire Rate:** These are usually labeled as "``RepeatFrame``" values.
  * The labels are generally intuitive and easy to find.
 
