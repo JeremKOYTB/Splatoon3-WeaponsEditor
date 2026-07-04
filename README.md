@@ -56,16 +56,41 @@ It simplifies editing weapon parameters, comparing them against reference archiv
 
 ## Usage
 
-### Launching
+**0. Launching**
 
 Run `Start.bat` to launch the editor. This script verifies updates and ensures the environment is correctly configured.
 
-### Editing
+**1. Preparation**
 
-1. Click **"Open Params.pack.zs"** to load the archive.
-2. Select weapons or components in the left panel.
-3. Edit values in the properties tree on the right.
-4. Click **"Save Repack"** to generate a new ZSTD-compressed Params.pack.zs.
+First, ensure you have the full game files extracted on your PC.
+You do not need a powerful computer, but it must be running at least Windows 10.
+
+ * I recommend using **Ryujinx** (*Ryubing*) to extract the files (you do not need to launch the game).
+ * Right-click the game in Ryujinx and extract only the romfs folder.
+
+**2. Opening the editor**
+
+ * Launch **Weapons Editor**.
+ * Click **Open Params.pack.zs**.
+ * Navigate to your extracted romfs folder, go into the **Pack** folder, and select Params.pack.zs.
+ * Wait a few seconds for the weapon images to load. Once loaded, you will see the screen I sent you earlier.
+ * You can now select the weapon you want to modify. Use the filter if you want to specifically target Salmon Run, Story Mode, or Special weapons.
+
+**3. Modifying weapons**
+ * Change the desired values. For example:
+   * **Damage:** Edit the "Damage" (ValueMax/ValueMin) fields.
+   * **Ink Consumption:** Look for the corresponding ink usage fields.
+   * **Fire Rate:** These are usually labeled as "``RepeatFrame``" values.
+ * The labels are generally intuitive and easy to find.
+
+**4. Saving and applying changes**
+ * Once you are finished, click **Save Repack** and choose where to save the file. You can then close the script.
+ * To apply these changes in-game, place the new Params.pack.zs file exactly in this path on your SD card:
+   ``sd:/atmosphere/contents/0100C2500FC20000/Pack/Params.pack.zs``
+
+---
+
+If you followed these steps correctly, your modified weapons will appear in the game. Feel free to ask if you have any questions, run into any issues, or are unsure about any part of this process! :)
 
 ### Comparison
 
