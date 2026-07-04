@@ -73,7 +73,7 @@ You do not need a powerful computer, but it must be running at least Windows 10.
  * Launch **Weapons Editor**.
  * Click **Open Params.pack.zs**.
  * Navigate to your extracted romfs folder, go into the **Pack** folder, and select Params.pack.zs.
- * Wait a few seconds for the weapon images to load. Once loaded, you will see the screen I sent you earlier.
+ * Wait a few seconds for the weapon images to load. Once loaded, you will see [this screen](https://github.com/JeremKOYTB/Splatoon3-WeaponsEditor#splatoon-3-weapons-editor).
  * You can now select the weapon you want to modify. Use the filter if you want to specifically target Salmon Run, Story Mode, or Special weapons.
 
 **3. Modifying weapons**
