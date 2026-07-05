@@ -3,6 +3,12 @@ import os
 import signal
 import subprocess
 import webbrowser
+import urllib.request
+import json
+import zipfile
+import io
+import re
+import shutil
 
 from utils import install_requirements
 install_requirements()
@@ -201,6 +207,105 @@ class AboutDialog(QDialog):
         QMessageBox.information(self, t("msg_copied"), t("msg_discord_copied"))
 
 
+class RSDBCheckWorker(QThread):
+    finished = pyqtSignal(bool, str, str, str, str)
+    
+    def __init__(self):
+        super().__init__()
+        
+    def find_rsdb_editor(self):
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        paths_to_check = [
+            os.path.abspath(os.path.join(current_dir, "..", "main.py")), 
+            os.path.abspath(os.path.join(current_dir, "..", "Splatoon3-RSDBEditor", "main.py")),
+            os.path.abspath(os.path.join(current_dir, "Splatoon3-RSDBEditor", "main.py"))
+        ]
+        
+        for p in paths_to_check:
+            if os.path.exists(p):
+                try:
+                    with open(p, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        if "Splatoon 3 RSDB Editor" in content or "SplatoonRSDBEditor" in content:
+                            return p
+                except Exception:
+                    pass
+        return None
+
+    def run(self):
+        local_version = "0.0.0"
+        rsdb_main_path = self.find_rsdb_editor()
+        exists = rsdb_main_path is not None
+        
+        if exists:
+            try:
+                with open(rsdb_main_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    match = re.search(r'APP_VERSION\s*=\s*["\']([^"\']+)["\']', content)
+                    if match:
+                        local_version = match.group(1)
+            except Exception:
+                pass
+        else:
+            rsdb_main_path = ""
+        
+        remote_version = "0.0.0"
+        download_url = ""
+        try:
+            req = urllib.request.Request("https://api.github.com/repos/JeremKOYTB/Splatoon3-RSDBEditor/releases/latest", headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                remote_version = data.get("tag_name", "0.0.0").replace("v", "")
+                
+                assets = data.get("assets", [])
+                for asset in assets:
+                    if asset["name"].endswith(".zip"):
+                        download_url = asset["browser_download_url"]
+                        break
+                if not download_url:
+                    download_url = data.get("zipball_url")
+        except Exception:
+            pass
+            
+        self.finished.emit(exists, local_version, remote_version, download_url, rsdb_main_path)
+
+class RSDBDownloadWorker(QThread):
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(bool, str, str)
+    
+    def __init__(self, url):
+        super().__init__()
+        self.url = url
+        self.current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.target_dir = os.path.abspath(os.path.join(self.current_dir, "..", "Splatoon3-RSDBEditor"))
+        
+    def run(self):
+        try:
+            self.progress.emit(t("rsdb_downloading"))
+            req = urllib.request.Request(self.url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=20) as response:
+                zip_data = response.read()
+                
+            self.progress.emit(t("rsdb_extracting"))
+            with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
+                top_level_dirs = set([item.split('/')[0] for item in z.namelist() if '/' in item])
+                if len(top_level_dirs) == 1:
+                    root_dir = list(top_level_dirs)[0]
+                    temp_dir = self.target_dir + "_temp"
+                    z.extractall(temp_dir)
+                    if os.path.exists(self.target_dir):
+                        shutil.rmtree(self.target_dir)
+                    shutil.move(os.path.join(temp_dir, root_dir), self.target_dir)
+                    shutil.rmtree(temp_dir)
+                else:
+                    if os.path.exists(self.target_dir):
+                        shutil.rmtree(self.target_dir)
+                    z.extractall(self.target_dir)
+            self.finished.emit(True, "", os.path.join(self.target_dir, "main.py"))
+        except Exception as e:
+            self.finished.emit(False, str(e), "")
+
+
 class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
     def __init__(self):
         super().__init__()
@@ -346,7 +451,93 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
         dialog.exec()
 
     def show_rsdb_notice(self):
-        QMessageBox.information(self, t("btn_rsdb"), t("msg_rsdb_soon"))
+        self.btn_rsdb.setEnabled(False)
+        self.btn_rsdb.setText(t("rsdb_checking"))
+        
+        self.rsdb_check_worker = RSDBCheckWorker()
+        self.rsdb_check_worker.finished.connect(self.on_rsdb_checked)
+        self.rsdb_check_worker.start()
+
+    def on_rsdb_checked(self, exists, local_ver, remote_ver, download_url, rsdb_path):
+        self.btn_rsdb.setEnabled(True)
+        self.btn_rsdb.setText(t("btn_rsdb"))
+        self.rsdb_download_url = download_url
+        self.rsdb_path = rsdb_path
+        
+        if not exists:
+            reply = QMessageBox.question(
+                self,
+                t("btn_rsdb"),
+                t("rsdb_not_installed"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.start_rsdb_download()
+        else:
+            msg = t("rsdb_ready")
+            update_available = False
+            
+            if remote_ver != "0.0.0" and local_ver != remote_ver:
+                msg = t("rsdb_update_avail", remote_ver, local_ver)
+                update_available = True
+            
+            if update_available:
+                box = QMessageBox(self)
+                box.setWindowTitle(t("rsdb_update_title"))
+                box.setText(msg)
+                btn_launch = box.addButton(t("btn_launch"), QMessageBox.ButtonRole.AcceptRole)
+                btn_update = box.addButton(t("btn_update_now"), QMessageBox.ButtonRole.ActionRole)
+                box.addButton(t("btn_cancel"), QMessageBox.ButtonRole.RejectRole)
+                box.exec()
+                
+                if box.clickedButton() == btn_launch:
+                    self.launch_rsdb()
+                elif box.clickedButton() == btn_update:
+                    self.start_rsdb_download()
+            else:
+                reply = QMessageBox.question(
+                    self,
+                    t("btn_rsdb"),
+                    t("rsdb_launch_prompt"),
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.launch_rsdb()
+
+    def start_rsdb_download(self):
+        if not hasattr(self, 'rsdb_download_url') or not self.rsdb_download_url:
+            QMessageBox.critical(self, t("err_title"), t("rsdb_err_url"))
+            return
+            
+        self.btn_rsdb.setEnabled(False)
+        self.btn_rsdb.setText(t("rsdb_downloading"))
+        self.rsdb_dl_worker = RSDBDownloadWorker(self.rsdb_download_url)
+        self.rsdb_dl_worker.progress.connect(lambda msg: self.btn_rsdb.setText(msg))
+        self.rsdb_dl_worker.finished.connect(self.on_rsdb_downloaded)
+        self.rsdb_dl_worker.start()
+
+    def on_rsdb_downloaded(self, success, error_msg, rsdb_path):
+        self.btn_rsdb.setEnabled(True)
+        self.btn_rsdb.setText(t("btn_rsdb"))
+        if success:
+            self.rsdb_path = rsdb_path
+            reply = QMessageBox.question(
+                self,
+                t("rsdb_install_done"),
+                t("rsdb_install_success"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                self.launch_rsdb()
+        else:
+            QMessageBox.critical(self, t("err_title"), t("rsdb_err_install", error_msg))
+
+    def launch_rsdb(self):
+        if hasattr(self, 'rsdb_path') and os.path.exists(self.rsdb_path):
+            rsdb_dir = os.path.dirname(self.rsdb_path)
+            subprocess.Popen([sys.executable, self.rsdb_path], cwd=rsdb_dir)
+        else:
+            QMessageBox.critical(self, t("err_title"), t("rsdb_err_main"))
 
     def reset_config_and_restart(self):
         reply = QMessageBox.question(
@@ -662,6 +853,7 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
         else:
             self.img_lbl.clear()
             self.img_lbl.setText(t("img_unavail"))
+
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal.SIG_DFL)
