@@ -216,9 +216,11 @@ class RSDBCheckWorker(QThread):
     def find_rsdb_editor(self):
         current_dir = os.path.dirname(os.path.abspath(__file__))
         paths_to_check = [
-            os.path.abspath(os.path.join(current_dir, "..", "main.py")), 
+            os.path.abspath(os.path.join(current_dir, "..", "main.py")),
             os.path.abspath(os.path.join(current_dir, "..", "Splatoon3-RSDBEditor", "main.py")),
-            os.path.abspath(os.path.join(current_dir, "Splatoon3-RSDBEditor", "main.py"))
+            os.path.abspath(os.path.join(current_dir, "..", "Splatoon3-RSDBEditor", "Splatoon3-RSDBEditor", "main.py")),
+            os.path.abspath(os.path.join(current_dir, "Splatoon3-RSDBEditor", "main.py")),
+            os.path.abspath(os.path.join(current_dir, "Splatoon3-RSDBEditor", "Splatoon3-RSDBEditor", "main.py"))
         ]
         
         for p in paths_to_check:
@@ -301,7 +303,19 @@ class RSDBDownloadWorker(QThread):
                     if os.path.exists(self.target_dir):
                         shutil.rmtree(self.target_dir)
                     z.extractall(self.target_dir)
-            self.finished.emit(True, "", os.path.join(self.target_dir, "main.py"))
+            
+            paths_to_check = [
+                os.path.join(self.target_dir, "main.py"),
+                os.path.join(self.target_dir, "Splatoon3-RSDBEditor", "main.py")
+            ]
+            
+            main_path = ""
+            for p in paths_to_check:
+                if os.path.exists(p):
+                    main_path = p
+                    break
+                
+            self.finished.emit(True, "", main_path)
         except Exception as e:
             self.finished.emit(False, str(e), "")
 
@@ -535,7 +549,25 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
     def launch_rsdb(self):
         if hasattr(self, 'rsdb_path') and os.path.exists(self.rsdb_path):
             rsdb_dir = os.path.dirname(self.rsdb_path)
-            subprocess.Popen([sys.executable, self.rsdb_path], cwd=rsdb_dir)
+            
+            paths_to_test = [
+                os.path.abspath(os.path.join(rsdb_dir, "..", "..", "Start.bat")),
+                os.path.abspath(os.path.join(rsdb_dir, "..", "Start.bat")),
+                os.path.abspath(os.path.join(rsdb_dir, "Start.bat"))
+            ]
+            
+            bat_found = False
+            for p in paths_to_test:
+                if os.path.exists(p):
+                    bat_dir = os.path.dirname(p)
+                    kwargs = {'cwd': bat_dir}
+                    if os.name == 'nt': kwargs['creationflags'] = 0x00000010
+                    subprocess.Popen([p], **kwargs)
+                    bat_found = True
+                    break
+                    
+            if not bat_found:
+                subprocess.Popen([sys.executable, self.rsdb_path], cwd=rsdb_dir)
         else:
             QMessageBox.critical(self, t("err_title"), t("rsdb_err_main"))
 
