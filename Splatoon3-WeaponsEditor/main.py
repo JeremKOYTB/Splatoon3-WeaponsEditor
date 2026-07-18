@@ -329,7 +329,7 @@ class RSDBDownloadWorker(QThread):
 class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
     def __init__(self):
         super().__init__()
-        self.APP_VERSION = "1.1.0"
+        self.APP_VERSION = "1.1.1"
         self.resize(1300, 800)
 
         self.last_is_dark = darkdetect.isDark()
@@ -900,7 +900,7 @@ if __name__ == "__main__":
     
     if os.name == 'nt':
         import ctypes
-        myappid = 'jeremkoytb.splatoon3weaponseditor.1.1.0'
+        myappid = 'jeremkoytb.splatoon3weaponseditor.1.1.1'
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     
     app = QApplication(sys.argv)
