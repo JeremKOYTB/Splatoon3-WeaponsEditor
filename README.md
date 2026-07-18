@@ -33,7 +33,7 @@ It simplifies editing weapon parameters, comparing them against reference archiv
 * **RomFS Manager** *(optional)*: Extract and automatically convert game textures (BNTX) and files from a local RomFS dump.
 * **Caching:** Automatically manages local image caches.
 * **Updater:** Integrated system to keep the editor updated.
-* **RSDB Editor:** Support coming in future updates.
+* **RSDB Editor:** check here: https://github.com/JeremKOYTB/Splatoon3-RSDBEditor
 
 ---
 
