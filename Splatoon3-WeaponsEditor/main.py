@@ -215,14 +215,12 @@ class RSDBCheckWorker(QThread):
         
     def find_rsdb_editor(self):
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Poupées russes avec la nouvelle "boite" Splatoon3RSDBEditor (sans tiret)
         paths_to_check = [
             os.path.abspath(os.path.join(current_dir, "..", "main.py")),
             os.path.abspath(os.path.join(current_dir, "..", "Splatoon3RSDBEditor", "main.py")),
             os.path.abspath(os.path.join(current_dir, "..", "Splatoon3RSDBEditor", "Splatoon3-RSDBEditor", "main.py")),
             os.path.abspath(os.path.join(current_dir, "Splatoon3RSDBEditor", "main.py")),
             os.path.abspath(os.path.join(current_dir, "Splatoon3RSDBEditor", "Splatoon3-RSDBEditor", "main.py")),
-            # Fallbacks
             os.path.abspath(os.path.join(current_dir, "..", "Splatoon3-RSDBEditor", "main.py")),
             os.path.abspath(os.path.join(current_dir, "..", "Splatoon3-RSDBEditor", "Splatoon3-RSDBEditor", "main.py"))
         ]
@@ -283,7 +281,6 @@ class RSDBDownloadWorker(QThread):
         super().__init__()
         self.url = url
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Le dossier cible sans tiret pour agir comme conteneur racine propre
         self.target_dir = os.path.abspath(os.path.join(self.current_dir, "..", "Splatoon3RSDBEditor"))
         
     def run(self):
@@ -295,7 +292,6 @@ class RSDBDownloadWorker(QThread):
                 
             self.progress.emit(t("rsdb_extracting"))
             with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
-                # Analyse correcte du contenu à la racine du ZIP (fichiers ET dossiers confondus)
                 root_items = set()
                 for item in z.namelist():
                     if not item: continue
@@ -559,12 +555,10 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
     def launch_rsdb(self):
         if hasattr(self, 'rsdb_path') and os.path.exists(self.rsdb_path):
             rsdb_dir = os.path.dirname(self.rsdb_path)
-            
-            # On ne remonte qu'à un seul niveau maximum pour ne pas "fuir"
-            # hors du dossier Splatoon3RSDBEditor et risquer de lancer le Start.bat global/du WE
+
             possible_roots = [
-                os.path.abspath(os.path.join(rsdb_dir, "..")),       # Racine du dossier Splatoon3RSDBEditor
-                rsdb_dir                                             # Dossier courant (où est main.py)
+                os.path.abspath(os.path.join(rsdb_dir, "..")),
+                rsdb_dir
             ]
             
             bat_found = False
