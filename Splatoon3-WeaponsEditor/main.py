@@ -215,12 +215,16 @@ class RSDBCheckWorker(QThread):
         
     def find_rsdb_editor(self):
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        # Poupées russes avec la nouvelle "boite" Splatoon3RSDBEditor (sans tiret)
         paths_to_check = [
             os.path.abspath(os.path.join(current_dir, "..", "main.py")),
+            os.path.abspath(os.path.join(current_dir, "..", "Splatoon3RSDBEditor", "main.py")),
+            os.path.abspath(os.path.join(current_dir, "..", "Splatoon3RSDBEditor", "Splatoon3-RSDBEditor", "main.py")),
+            os.path.abspath(os.path.join(current_dir, "Splatoon3RSDBEditor", "main.py")),
+            os.path.abspath(os.path.join(current_dir, "Splatoon3RSDBEditor", "Splatoon3-RSDBEditor", "main.py")),
+            # Fallbacks
             os.path.abspath(os.path.join(current_dir, "..", "Splatoon3-RSDBEditor", "main.py")),
-            os.path.abspath(os.path.join(current_dir, "..", "Splatoon3-RSDBEditor", "Splatoon3-RSDBEditor", "main.py")),
-            os.path.abspath(os.path.join(current_dir, "Splatoon3-RSDBEditor", "main.py")),
-            os.path.abspath(os.path.join(current_dir, "Splatoon3-RSDBEditor", "Splatoon3-RSDBEditor", "main.py"))
+            os.path.abspath(os.path.join(current_dir, "..", "Splatoon3-RSDBEditor", "Splatoon3-RSDBEditor", "main.py"))
         ]
         
         for p in paths_to_check:
@@ -279,7 +283,8 @@ class RSDBDownloadWorker(QThread):
         super().__init__()
         self.url = url
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.target_dir = os.path.abspath(os.path.join(self.current_dir, "..", "Splatoon3-RSDBEditor"))
+        # Le dossier cible sans tiret pour agir comme conteneur racine propre
+        self.target_dir = os.path.abspath(os.path.join(self.current_dir, "..", "Splatoon3RSDBEditor"))
         
     def run(self):
         try:
@@ -290,9 +295,14 @@ class RSDBDownloadWorker(QThread):
                 
             self.progress.emit(t("rsdb_extracting"))
             with zipfile.ZipFile(io.BytesIO(zip_data)) as z:
-                top_level_dirs = set([item.split('/')[0] for item in z.namelist() if '/' in item])
-                if len(top_level_dirs) == 1:
-                    root_dir = list(top_level_dirs)[0]
+                # Analyse correcte du contenu à la racine du ZIP (fichiers ET dossiers confondus)
+                root_items = set()
+                for item in z.namelist():
+                    if not item: continue
+                    root_items.add(item.split('/')[0])
+                    
+                if len(root_items) == 1:
+                    root_dir = list(root_items)[0]
                     temp_dir = self.target_dir + "_temp"
                     z.extractall(temp_dir)
                     if os.path.exists(self.target_dir):
@@ -550,20 +560,24 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
         if hasattr(self, 'rsdb_path') and os.path.exists(self.rsdb_path):
             rsdb_dir = os.path.dirname(self.rsdb_path)
             
-            paths_to_test = [
-                os.path.abspath(os.path.join(rsdb_dir, "..", "..", "Start.bat")),
-                os.path.abspath(os.path.join(rsdb_dir, "..", "Start.bat")),
-                os.path.abspath(os.path.join(rsdb_dir, "Start.bat"))
+            # On ne remonte qu'à un seul niveau maximum pour ne pas "fuir"
+            # hors du dossier Splatoon3RSDBEditor et risquer de lancer le Start.bat global/du WE
+            possible_roots = [
+                os.path.abspath(os.path.join(rsdb_dir, "..")),       # Racine du dossier Splatoon3RSDBEditor
+                rsdb_dir                                             # Dossier courant (où est main.py)
             ]
             
             bat_found = False
-            for p in paths_to_test:
-                if os.path.exists(p):
-                    bat_dir = os.path.dirname(p)
-                    kwargs = {'cwd': bat_dir}
-                    if os.name == 'nt': kwargs['creationflags'] = 0x00000010
-                    subprocess.Popen([p], **kwargs)
-                    bat_found = True
+            for root in possible_roots:
+                for bat_name in ["start.bat", "Start.bat"]:
+                    bat_path = os.path.join(root, bat_name)
+                    if os.path.exists(bat_path):
+                        kwargs = {'cwd': root}
+                        if os.name == 'nt': kwargs['creationflags'] = 0x00000010
+                        subprocess.Popen([bat_path], **kwargs)
+                        bat_found = True
+                        break
+                if bat_found:
                     break
                     
             if not bat_found:
