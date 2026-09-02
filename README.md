@@ -86,7 +86,7 @@ You do not need a powerful computer, but it must be running at least Windows 10.
 **4. Saving and applying changes**
  * Once you are finished, click **Save Repack** and choose where to save the file. You can then close the script.
  * To apply these changes in-game, place the new Params.pack.zs file exactly in this path on your SD card:
-   ``sd:/atmosphere/contents/0100C2500FC20000/Pack/Params.pack.zs``
+   ``sd:/atmosphere/contents/0100C2500FC20000/romfs/Pack/Params.pack.zs``
 
 ---
 
