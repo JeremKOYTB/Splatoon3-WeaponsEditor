@@ -13,7 +13,7 @@ from utils import log, CACHE_DIR, get_last_dir, set_last_dir, save_favorites
 from translations import t
 from tree_handler import TreeHandler
 from engine import SplatoonPackManager
-from components import DiffDialog, CacheDialog, CacheBuilderWorker, ImageManager
+from components import DiffDialog, CacheDialog, ImageManager, ProgressiveCacheWorker
 from splatoon_data import compare_dicts, parse_node
 from romfs_builder import RomFSBuilderWorker
 
@@ -32,7 +32,13 @@ class EditorFeaturesMixin:
             self.pack_manager.byml_files[self.current_byml_name] = TreeHandler.build_dict(self.tree_w.invisibleRootItem())
 
         ref_pack = SplatoonPackManager()
-        self.name_lbl.setText(t("msg_analyzing"))
+        if hasattr(self.name_lbl, 'setText'):
+            try:
+                self.name_lbl.setText(t("msg_analyzing"), animate=False)
+            except TypeError:
+                self.name_lbl.setText(t("msg_analyzing"))
+        else:
+            self.name_lbl.setText(t("msg_analyzing"))
         QApplication.processEvents()
 
         success, msg = ref_pack.load_pack(path)
@@ -60,7 +66,13 @@ class EditorFeaturesMixin:
         if self.current_byml_name: 
             self.refresh_weapon_ui(self.current_byml_name) 
         else: 
-            self.name_lbl.setText(t("msg_compare_done"))
+            if hasattr(self.name_lbl, 'setText'):
+                try:
+                    self.name_lbl.setText(t("msg_compare_done"), animate=False)
+                except TypeError:
+                    self.name_lbl.setText(t("msg_compare_done"))
+            else:
+                self.name_lbl.setText(t("msg_compare_done"))
         
         if not any(diff_results.values()):
             QMessageBox.information(self, t("compare_title"), t("msg_identical"))
@@ -69,6 +81,17 @@ class EditorFeaturesMixin:
             if self.chk_auto_expand.isChecked():
                 dialog.tree.expandAll()
             dialog.exec()
+
+    def is_item_dummy(self, img_filename):
+        if not img_filename or img_filename == "Dummy.png" or img_filename in self.known_dummies:
+            return True
+        icon_path = os.path.join(CACHE_DIR, img_filename)
+        if not os.path.exists(icon_path) or os.path.getsize(icon_path) == 0:
+            return True
+        img = QImage(icon_path)
+        if img.isNull():
+            return True
+        return False
 
     def refresh_file_list(self):
         if not self.pack_manager.sarc: return
@@ -99,26 +122,26 @@ class EditorFeaturesMixin:
                 if search_text not in search_target:
                     continue
 
+            is_dummy = self.is_item_dummy(img_filename)
+
             if f_data == "all": 
                 pass
             elif f_data == "dummy": 
-                is_dummy = img_filename in self.known_dummies
                 if not is_dummy: continue
             elif internal_name in ["SplPlayer", "WeaponFree"]:
                 pass
-            elif f_data == "Hero":
+            elif f_data == "Hero": 
                 if not (any(m in path for m in ["Mission", "Rival", "Hero", "_Msn", "Lv"]) or "SalmonBuddy" in path or "SpIkuraShoot" in path):
                     continue
-            elif f_data == "Coop":
+            elif f_data == "Coop": 
                 if "Coop" not in path:
                     continue
-            elif f_data == "WeaponSp":
+            elif f_data == "WeaponSp": 
                 if not (("WeaponSp" in path and "WeaponSpinner" not in path) or "IkuraShoot" in path):
                     continue
             elif f_data and f_data not in path: 
                 continue
 
-            is_dummy = img_filename in self.known_dummies
             if hide_dummies and is_dummy:
                 hidden_by_dummy_count += 1
                 continue
@@ -165,7 +188,7 @@ class EditorFeaturesMixin:
             star_item = QTableWidgetItem("★" if path in self.favorites else "☆")
             star_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             
-            star_color = QColor("#f1c40f") if path in self.favorites else QColor("#cccccc")
+            star_color = QColor("#f1c40f") if path in self.favorites else QColor("#888888")
             star_item.setForeground(QBrush(star_color))
 
             name_item = QTableWidgetItem(display_name)
@@ -173,7 +196,7 @@ class EditorFeaturesMixin:
             name_item.setToolTip(path)
             
             icon_path = os.path.join(CACHE_DIR, img_filename)
-            if not os.path.exists(icon_path):
+            if not os.path.exists(icon_path) or os.path.getsize(icon_path) == 0:
                 icon_path = os.path.join(CACHE_DIR, "Dummy.png")
                 
             if os.path.exists(icon_path):
@@ -184,6 +207,8 @@ class EditorFeaturesMixin:
                     square.fill(Qt.GlobalColor.transparent)
                     
                     painter = QPainter(square)
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
                     x = (28 - scaled.width()) // 2
                     y = (28 - scaled.height()) // 2
                     painter.drawImage(x, y, scaled)
@@ -205,12 +230,24 @@ class EditorFeaturesMixin:
                 return
 
         set_last_dir(path)
-        self.name_lbl.setText(t("lbl_extracting"))
+        if hasattr(self.name_lbl, 'setText'):
+            try:
+                self.name_lbl.setText(t("lbl_extracting"), animate=False)
+            except TypeError:
+                self.name_lbl.setText(t("lbl_extracting"))
+        else:
+            self.name_lbl.setText(t("lbl_extracting"))
         QApplication.processEvents()
 
         success, msg = self.pack_manager.load_pack(path)
         if success:
-            self.name_lbl.setText(t("lbl_archive_loaded"))
+            if hasattr(self.name_lbl, 'setText'):
+                try:
+                    self.name_lbl.setText(t("lbl_archive_loaded"), animate=False)
+                except TypeError:
+                    self.name_lbl.setText(t("lbl_archive_loaded"))
+            else:
+                self.name_lbl.setText(t("lbl_archive_loaded"))
             self.start_global_cache()
         else:
             QMessageBox.critical(self, t("err_title"), msg)
@@ -328,73 +365,79 @@ class EditorFeaturesMixin:
         QTimer.singleShot(4000, self.hide_progress_ui)
 
     def start_global_cache(self):
-        log("[CACHE] Initiating deep image cache check. Identifying missing or corrupted icons.")
+        log("[CACHE] Initiating image cache check.")
         expected_images = set()
         for file_name in self.pack_manager.byml_files.keys():
             internal_name = file_name.split('/')[-1].split('.')[0]
             _, img_filename, _, _ = self.data_manager.guess_image_and_name(internal_name)
             expected_images.add(img_filename)
 
-        missing_images = set()
+        missing_images = []
         for img in expected_images:
             path = os.path.join(CACHE_DIR, img)
-            if not os.path.exists(path):
-                missing_images.add(img)
-            else:
-                if os.path.getsize(path) == 0:
-                    log(f"[CACHE] Corrupted file detected (0 bytes): {img}")
-                    missing_images.add(img)
+            if not os.path.exists(path) or os.path.getsize(path) == 0:
+                missing_images.append(img)
+
+        self.refresh_file_list()
 
         if missing_images:
-            existing_pngs = [f for f in os.listdir(CACHE_DIR) if f.endswith('.png') and f != "Dummy.png"]
-            is_first_run = len(existing_pngs) == 0
+            if hasattr(self, 'cache_worker') and self.cache_worker and self.cache_worker.isRunning():
+                self.cache_worker.cancel()
+                self.cache_worker.wait()
 
-            self.cache_worker = CacheBuilderWorker(missing_images)
+            self.prog_container.setVisible(True)
+            self.progress_bar.setMaximum(len(missing_images))
+            self.progress_bar.setValue(0)
+            self.progress_lbl.setText(t("cache_bg"))
+
+            self.cache_worker = ProgressiveCacheWorker(missing_images)
             self.cache_worker.progress.connect(self.update_cache_progress)
+            self.cache_worker.image_loaded.connect(self.on_single_image_cached)
             self.cache_worker.finished.connect(self.on_cache_finished)
-
-            if is_first_run:
-                self.cache_dialog = CacheDialog(self)
-                self.cache_dialog.progress.setMaximum(len(missing_images))
-                self.cache_dialog.show()
-            else:
-                self.prog_container.setVisible(True)
-                self.progress_bar.setMaximum(len(missing_images))
-                self.progress_bar.setValue(0)
-                self.progress_lbl.setText(t("cache_bg"))
-                self.refresh_file_list()
-
             self.cache_worker.start()
         else:
-            log("[CACHE] All required images are fully present and healthy in the local cache directory.")
-            self.refresh_file_list()
+            self.prog_container.setVisible(False)
 
     def update_cache_progress(self, completed, total):
-        if hasattr(self, 'cache_dialog') and self.cache_dialog.isVisible():
-            self.cache_dialog.progress.setValue(completed)
-        else:
-            self.progress_bar.setValue(completed)
+        self.progress_bar.setValue(completed)
 
-    def on_cache_finished(self, new_dummies):
-        self.known_dummies.update(new_dummies)
-        
-        self.has_actual_dummies = False
-        for file_name in self.pack_manager.byml_files.keys():
-            internal_name = file_name.split('/')[-1].split('.')[0]
-            _, img_filename, _, _ = self.data_manager.guess_image_and_name(internal_name)
-            if img_filename in self.known_dummies:
-                self.has_actual_dummies = True
-                break
-                
-        self.update_dummy_filter_visibility()
-        
-        if hasattr(self, 'cache_dialog') and self.cache_dialog.isVisible():
-            self.cache_dialog.setWindowFlags(Qt.WindowType.Dialog)
-            self.cache_dialog.accept()
-        else:
-            self.progress_lbl.setText(t("cache_done"))
-            QTimer.singleShot(1500, self.hide_progress_ui)
-            
+    def on_single_image_cached(self, img_name):
+        icon_path = os.path.join(CACHE_DIR, img_name)
+        if not os.path.exists(icon_path):
+            return
+        img = QImage(icon_path)
+        if img.isNull():
+            return
+        scaled = img.scaled(28, 28, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        square = QImage(28, 28, QImage.Format.Format_ARGB32_Premultiplied)
+        square.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(square)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.drawImage((28 - scaled.width()) // 2, (28 - scaled.height()) // 2, scaled)
+        painter.end()
+        new_icon = QIcon(QPixmap.fromImage(square))
+
+        for row in range(self.table_w.rowCount()):
+            item = self.table_w.item(row, 1)
+            if item:
+                path = item.data(Qt.ItemDataRole.UserRole)
+                if path:
+                    int_name = path.split('/')[-1].split('.')[0]
+                    _, cur_img, _, _ = self.data_manager.guess_image_and_name(int_name)
+                    if cur_img == img_name:
+                        item.setIcon(new_icon)
+                        if hasattr(self, 'weapon_delegate'):
+                            self.weapon_delegate.trigger_icon_animation(row)
+
+        if self.current_byml_name:
+            cur_int = self.current_byml_name.split('/')[-1].split('.')[0]
+            _, cur_img, _, _ = self.data_manager.guess_image_and_name(cur_int)
+            if cur_img == img_name:
+                self.on_image_downloaded(img)
+
+    def on_cache_finished(self):
+        self.prog_container.setVisible(False)
         self.refresh_file_list()
 
     def hide_progress_ui(self):
@@ -402,25 +445,22 @@ class EditorFeaturesMixin:
 
     def refresh_weapon_ui(self, file_name):
         internal_name = file_name.split('/')[-1].split('.')[0]
-        log(f"\n========================================")
-        log(f"[UI] Object selected. Beginning deep analysis for: {internal_name}")
+        raw_name, img_filename, is_exact, json_key = self.data_manager.guess_image_and_name(internal_name, verbose=False)
+        loc_name = self.data_manager.get_exact_translation(internal_name, json_key, verbose=False)
         
-        raw_name, img_filename, is_exact, json_key = self.data_manager.guess_image_and_name(internal_name, verbose=True)
-        loc_name = self.data_manager.get_exact_translation(internal_name, json_key, verbose=True)
-        
-        html_text = f"<b><span style='font-size: 14pt;'>{t('raw_data')}<br>({internal_name})</span></b><br>"
-        
+        html_text = f"<span style='font-size: 13pt; font-weight: bold;'>{internal_name}</span>"
         if loc_name:
-            html_text += f"<span style='font-size: 12pt; color: #2ecc71; font-weight: bold;'>{loc_name}</span><br>"
-        else:
-            html_text += "<span style='font-size: 12pt;'>&nbsp;</span><br>"
-            
+            html_text += f"<br><span style='font-size: 11pt; color: #2ecc71; font-weight: 600;'>{loc_name}</span>"
         if not is_exact:
-            html_text += f"<span style='font-size: 10pt; color: #ff9f43;'>{t('warn_projectile')}</span>"
-        else:
-            html_text += "<span style='font-size: 10pt;'>&nbsp;</span>"
+            html_text += f"<br><span style='font-size: 9pt; color: #ff9f43;'>{t('warn_projectile')}</span>"
             
-        self.name_lbl.setText(html_text)
+        if hasattr(self.name_lbl, 'setText'):
+            try:
+                self.name_lbl.setText(html_text, animate=True)
+            except TypeError:
+                self.name_lbl.setText(html_text)
+        else:
+            self.name_lbl.setText(html_text)
 
         self._thread_pool = [t for t in self._thread_pool if t.isRunning()]
         
@@ -432,13 +472,8 @@ class EditorFeaturesMixin:
             self._thread_pool.append(self.image_manager)
 
         icon_path = os.path.join(CACHE_DIR, img_filename)
-        if not os.path.exists(icon_path):
+        if not os.path.exists(icon_path) or os.path.getsize(icon_path) == 0:
             icon_path = os.path.join(CACHE_DIR, "Dummy.png")
-            
-        if os.path.exists(icon_path):
-            log(f"[UI] Valid icon mapping established with local cache file: {os.path.basename(icon_path)}")
-        else:
-            log(f"[UI] CRITICAL: Computed icon '{img_filename}' AND fallback 'Dummy.png' are missing from local cache directory.")
 
         self.image_manager = ImageManager(os.path.basename(icon_path))
         self.image_manager.finished.connect(self.on_image_downloaded)

@@ -5,16 +5,342 @@ import concurrent.futures
 import re
 import darkdetect
 
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QTreeWidget, QTreeWidgetItem, QPushButton, 
-                             QMessageBox, QStyledItemDelegate, QSpinBox, 
-                             QComboBox, QLineEdit, QProgressBar, QMenu, 
-                             QApplication, QTextEdit, QAbstractItemView, QFileDialog)
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+    QTreeWidget, QTreeWidgetItem, QPushButton, 
+    QMessageBox, QStyledItemDelegate, QSpinBox, 
+    QComboBox, QLineEdit, QProgressBar, QMenu, 
+    QApplication, QTextEdit, QAbstractItemView, QFileDialog,
+    QStyle, QGraphicsOpacityEffect
+)
 from PyQt6.QtGui import QFont, QBrush, QColor, QIcon, QImage, QPainter, QPixmap, QTextOption
-from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, QSize, QThread, pyqtSignal, QEvent, QRect, QVariantAnimation, QEasingCurve, QPropertyAnimation
 
 from utils import CACHE_DIR, log
 from translations import t
+
+class AnimatedWeaponImage(QLabel):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self._pixmap = None
+        self._scale = 1.0
+        self._opacity = 1.0
+        self._anim = None
+
+    def setPixmap(self, pixmap, animate=True):
+        self._pixmap = pixmap
+        if pixmap and not pixmap.isNull():
+            self.setText("")
+        if self._anim and self._anim.state() == QVariantAnimation.State.Running:
+            self._anim.stop()
+
+        if not animate or pixmap is None or pixmap.isNull():
+            self._scale = 1.0
+            self._opacity = 1.0
+            self.update()
+            return
+
+        self._scale = 0.65
+        self._opacity = 0.0
+        self.update()
+
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(380)
+        self._anim.setStartValue(0.0)
+        self._anim.setEndValue(1.0)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutBack)
+
+        def on_step(val):
+            self._scale = 0.65 + 0.35 * val
+            self._opacity = min(1.0, max(0.0, val * 1.6))
+            self.update()
+
+        def on_end():
+            self._scale = 1.0
+            self._opacity = 1.0
+            self.update()
+
+        self._anim.valueChanged.connect(on_step)
+        self._anim.finished.connect(on_end)
+        self._anim.start()
+
+    def clear(self):
+        self._pixmap = None
+        if self._anim and self._anim.state() == QVariantAnimation.State.Running:
+            self._anim.stop()
+        self._scale = 1.0
+        self._opacity = 1.0
+        super().clear()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._pixmap and not self._pixmap.isNull():
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            painter.setOpacity(self._opacity)
+            cx = self.width() / 2.0
+            cy = self.height() / 2.0
+            painter.translate(cx, cy)
+            painter.scale(self._scale, self._scale)
+            pw = self._pixmap.width()
+            ph = self._pixmap.height()
+            painter.drawPixmap(int(-pw / 2.0), int(-ph / 2.0), self._pixmap)
+            painter.end()
+
+class AnimatedTitleLabel(QLabel):
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setTextFormat(Qt.TextFormat.RichText)
+        self.setWordWrap(True)
+        
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity_effect)
+        
+        self._anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        self._anim.setDuration(240)
+        self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def setText(self, text, animate=True):
+        super().setText(text)
+        if not animate or not text:
+            self._anim.stop()
+            self._opacity_effect.setOpacity(1.0)
+            return
+
+        self._anim.stop()
+        self._opacity_effect.setOpacity(0.1)
+        self._anim.setStartValue(0.1)
+        self._anim.setEndValue(1.0)
+        self._anim.start()
+
+class WeaponTableDelegate(QStyledItemDelegate):
+    def __init__(self, parent_table):
+        super().__init__(parent_table)
+        self.table = parent_table
+        self._anim_rows = {}
+        self._max_concurrent = 64
+
+    def trigger_icon_animation(self, row):
+        if not self.table or row < 0 or row >= self.table.rowCount():
+            return
+        item = self.table.item(row, 1)
+        if not item:
+            return
+        try:
+            rect = self.table.visualItemRect(item)
+            if not self.table.viewport().rect().intersects(rect):
+                return
+        except RuntimeError:
+            return
+
+        if len(self._anim_rows) >= self._max_concurrent:
+            return
+
+        if row in self._anim_rows:
+            self._anim_rows[row][1].stop()
+
+        anim = QVariantAnimation(self)
+        anim.setDuration(380)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutBack)
+
+        def on_step(val):
+            self._anim_rows[row] = (val, anim)
+            if self.table and self.table.viewport():
+                try:
+                    it = self.table.item(row, 1)
+                    if it:
+                        rect = self.table.visualItemRect(it)
+                        self.table.viewport().update(rect)
+                    else:
+                        self.table.viewport().update()
+                except RuntimeError:
+                    anim.stop()
+
+        def on_end():
+            self._anim_rows.pop(row, None)
+            if self.table and self.table.viewport():
+                try:
+                    it = self.table.item(row, 1)
+                    if it:
+                        self.table.viewport().update(self.table.visualItemRect(it))
+                    else:
+                        self.table.viewport().update()
+                except RuntimeError:
+                    self.table.viewport().update()
+
+        anim.valueChanged.connect(on_step)
+        anim.finished.connect(on_end)
+        self._anim_rows[row] = (0.0, anim)
+        anim.start()
+
+    def paint(self, painter, option, index):
+        if index.column() == 0:
+            super().paint(painter, option, index)
+            return
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+
+        row = index.row()
+        rect = option.rect
+        is_selected = bool(option.state & QStyle.StateFlag.State_Selected)
+        is_hovered = bool(option.state & QStyle.StateFlag.State_MouseOver)
+
+        if is_selected:
+            painter.fillRect(rect, QColor("#0078D7"))
+        elif is_hovered:
+            painter.fillRect(rect, QColor(255, 255, 255, 20))
+        else:
+            painter.fillRect(rect, Qt.GlobalColor.transparent)
+
+        icon = index.data(Qt.ItemDataRole.DecorationRole)
+        icon_size = 28
+        icon_x = rect.left() + 6
+        icon_y = rect.top() + (rect.height() - icon_size) // 2
+
+        is_animating = row in self._anim_rows
+        prog = self._anim_rows[row][0] if is_animating else 1.0
+
+        if isinstance(icon, QIcon) and not icon.isNull():
+            pix = icon.pixmap(QSize(icon_size, icon_size))
+            if not pix.isNull():
+                if is_animating:
+                    painter.save()
+                    painter.setOpacity(min(1.0, max(0.0, prog * 1.5)))
+                    cx = icon_x + icon_size / 2.0
+                    cy = icon_y + icon_size / 2.0
+                    painter.translate(cx, cy)
+                    scale = 0.60 + (0.40 * prog)
+                    painter.scale(scale, scale)
+                    painter.drawPixmap(int(-icon_size / 2.0), int(-icon_size / 2.0), pix)
+                    painter.restore()
+                else:
+                    painter.drawPixmap(icon_x, icon_y, pix)
+        else:
+            placeholder_rect = QRect(icon_x + 2, icon_y + 2, icon_size - 4, icon_size - 4)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(255, 255, 255, 14))
+            painter.drawRoundedRect(placeholder_rect, 4, 4)
+
+        text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        text_x = icon_x + icon_size + 10
+        text_w = rect.width() - (text_x - rect.left()) - 8
+        text_rect = QRect(text_x, rect.top(), max(0, text_w), rect.height())
+        text_color = QColor("#FFFFFF") if is_selected else option.palette.text().color()
+        painter.setPen(text_color)
+        painter.setFont(option.font)
+        elided = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, text_w)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided)
+        painter.restore()
+
+class CacheDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(t("cache_title"))
+        self.setFixedSize(450, 120)
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
+        
+        layout = QVBoxLayout(self)
+        self.lbl = QLabel(t("cache_desc"))
+        self.lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.lbl)
+        
+        self.progress = QProgressBar()
+        self.progress.setValue(0)
+        layout.addWidget(self.progress)
+
+    def closeEvent(self, event):
+        event.ignore()
+
+def get_default_image_urls(img_filename):
+    if img_filename == "Dummy.png":
+        return ["https://leanny.github.io/splat3/images/weapon/Dummy.png"]
+    elif img_filename == "Wsb_SalmonBuddy00.png":
+        return ["https://leanny.github.io/splat3/images/minigame/card/Kojake.png"]
+    elif img_filename == "SakelienSmall.png":
+        return ["https://leanny.github.io/splat3/images/coopEnemy/SakelienSmall.png"]
+    elif img_filename == "Wsp_Shachihoko.png":
+        return ["https://leanny.github.io/splat3/images/weapon/Wsp_Shachihoko.png"]
+    elif img_filename.startswith("Win"):
+        return [f"https://leanny.github.io/splat3/images/emote/{img_filename}"]
+    elif img_filename.startswith("Wsp_") or img_filename.startswith("Wsb_"):
+        return [f"https://leanny.github.io/splat3/images/subspe/{img_filename}"]
+    elif img_filename.startswith("Path_"):
+        return [f"https://leanny.github.io/splat3/images/weapon_flat/{img_filename}"]
+    else:
+        return [
+            f"https://leanny.github.io/splat3/images/weapon/{img_filename}",
+            f"https://leanny.github.io/splat3/images/weapon_flat/Path_{img_filename}",
+            f"https://leanny.github.io/splat3/images/weapon_flat/{img_filename}"
+        ]
+
+class ProgressiveCacheWorker(QThread):
+    progress = pyqtSignal(int, int)
+    image_loaded = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def __init__(self, missing_images, url_resolver=None):
+        super().__init__()
+        self.missing_images = list(missing_images)
+        self.url_resolver = url_resolver if url_resolver else get_default_image_urls
+        self.is_cancelled = False
+
+    def run(self):
+        total = len(self.missing_images)
+        if total == 0:
+            self.finished.emit()
+            return
+
+        session = requests.Session()
+        from requests.adapters import HTTPAdapter
+        adapter = HTTPAdapter(pool_connections=12, pool_maxsize=12, max_retries=1)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+
+        completed = 0
+
+        def download_one(img_name):
+            if self.is_cancelled:
+                return None
+            urls = self.url_resolver(img_name)
+            local_path = os.path.join(CACHE_DIR, img_name)
+            for url in urls:
+                if self.is_cancelled:
+                    break
+                try:
+                    resp = session.get(url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=5)
+                    if resp.status_code == 200 and len(resp.content) > 0:
+                        with open(local_path, "wb") as f:
+                            f.write(resp.content)
+                        return img_name
+                except Exception:
+                    pass
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(download_one, img): img for img in self.missing_images}
+            for future in concurrent.futures.as_completed(futures):
+                if self.is_cancelled:
+                    break
+                img_loaded = future.result()
+                completed += 1
+                if img_loaded:
+                    self.image_loaded.emit(img_loaded)
+                self.progress.emit(completed, total)
+
+        try:
+            session.close()
+        except Exception:
+            pass
+        self.finished.emit()
+
+    def cancel(self):
+        self.is_cancelled = True
 
 class _MissingItem: pass
 MISSING = _MissingItem()
@@ -532,7 +858,7 @@ class DiffDialog(QDialog):
             
             if fname not in parent_win.pack_manager.byml_files or fname not in self.ref_pack.byml_files:
                 return self._process_reset(file_node)
-                
+            
             path_tuple = item.data(0, Qt.ItemDataRole.UserRole)
             if not path_tuple: return
 
@@ -694,7 +1020,7 @@ class DiffDialog(QDialog):
                 self, 
                 title, 
                 default_name, 
-                filter_str,
+                filter_str, 
                 "Pack ZS (*.pack.zs)",
                 options=QFileDialog.Option.DontUseNativeDialog
             )
@@ -720,7 +1046,7 @@ class DiffDialog(QDialog):
                 self, 
                 title_ref, 
                 default_name_ref, 
-                filter_str,
+                filter_str, 
                 "Pack ZS (*.pack.zs)",
                 options=QFileDialog.Option.DontUseNativeDialog
             )
@@ -744,7 +1070,6 @@ class DiffDialog(QDialog):
                 if hasattr(main_win, 'refresh_file_list'):
                     main_win.refresh_file_list()
                 self._safe_reload_parent_ui()
-
 
 class TypeEnforcedDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
@@ -805,87 +1130,6 @@ class TypeEnforcedDelegate(QStyledItemDelegate):
             model.setData(index, new_val, Qt.ItemDataRole.DisplayRole)
             log(f"[EDIT] Value modified from '{old_val}' to '{new_val}' (Type: str).")
 
-
-class CacheDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle(t("cache_title"))
-        self.setFixedSize(450, 120)
-        self.setWindowModality(Qt.WindowModality.ApplicationModal)
-        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint)
-        
-        layout = QVBoxLayout(self)
-        self.lbl = QLabel(t("cache_desc"))
-        self.lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.lbl)
-        
-        self.progress = QProgressBar()
-        self.progress.setValue(0)
-        layout.addWidget(self.progress)
-
-    def closeEvent(self, event):
-        event.ignore()
-
-
-class CacheBuilderWorker(QThread):
-    progress = pyqtSignal(int, int)
-    finished = pyqtSignal(set)
-
-    def __init__(self, missing_images):
-        super().__init__()
-        self.missing_images = missing_images
-        self.new_dummies = set()
-
-    def download_image(self, img_filename):
-        local_path = os.path.join(CACHE_DIR, img_filename)
-        urls_to_try = []
-        
-        if img_filename == "Dummy.png": urls_to_try = ["https://leanny.github.io/splat3/images/weapon/Dummy.png"]
-        elif img_filename == "Wsb_SalmonBuddy00.png": urls_to_try = ["https://leanny.github.io/splat3/images/minigame/card/Kojake.png"]
-        elif img_filename == "SakelienSmall.png": urls_to_try = ["https://leanny.github.io/splat3/images/coopEnemy/SakelienSmall.png"]
-        elif img_filename == "Wsp_Shachihoko.png": urls_to_try = ["https://leanny.github.io/splat3/images/weapon/Wsp_Shachihoko.png"]
-        elif img_filename.startswith("Win"): urls_to_try = [f"https://leanny.github.io/splat3/images/emote/{img_filename}"]
-        elif img_filename.startswith("Wsp_") or img_filename.startswith("Wsb_"): urls_to_try = [f"https://leanny.github.io/splat3/images/subspe/{img_filename}"]
-        elif img_filename.startswith("Path_"): urls_to_try = [f"https://leanny.github.io/splat3/images/weapon_flat/{img_filename}"]
-        else:
-            urls_to_try = [
-                f"https://leanny.github.io/splat3/images/weapon/{img_filename}",
-                f"https://leanny.github.io/splat3/images/weapon_flat/Path_{img_filename}",
-                f"https://leanny.github.io/splat3/images/weapon_flat/{img_filename}"
-            ]
-            
-        for url in urls_to_try:
-            log(f"[NET] Fetching image: {url}")
-            try:
-                resp = requests.get(url, timeout=5)
-                if resp.status_code == 200:
-                    with open(local_path, "wb") as f: f.write(resp.content)
-                    log(f"[NET] SUCCESS (200) for {img_filename}")
-                    return None
-                else: log(f"[NET] FAIL ({resp.status_code}) for {url}")
-            except Exception as e: log(f"[NET] ERROR ({e}) for {url}")
-                
-        log(f"[NET] All URLs exhausted. Classified as Dummy: {img_filename}")
-        return img_filename 
-
-    def run(self):
-        missing_list = list(self.missing_images)
-        total, completed = len(missing_list), 0
-        log(f"[CACHE] Starting download thread for {total} missing files.")
-
-        if total > 0:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-                futures = {executor.submit(self.download_image, img): img for img in missing_list}
-                for future in concurrent.futures.as_completed(futures):
-                    res = future.result()
-                    if res: self.new_dummies.add(res)
-                    completed += 1
-                    self.progress.emit(completed, total)
-
-        log(f"[CACHE] Analysis complete. {len(self.new_dummies)} images not found.")
-        self.finished.emit(self.new_dummies)
-
-
 class ImageManager(QThread):
     finished = pyqtSignal(QImage)
 
@@ -899,7 +1143,6 @@ class ImageManager(QThread):
         if os.path.exists(self.local_path) and img.load(self.local_path): self.finished.emit(img)
         elif os.path.exists(self.dummy_path) and img.load(self.dummy_path): self.finished.emit(img)
         else: self.finished.emit(QImage())
-
 
 class UpdateCheckWorker(QThread):
     finished = pyqtSignal(int, str, str)
@@ -927,7 +1170,6 @@ class UpdateCheckWorker(QThread):
         except Exception as e:
             log(f"[NET] Update check failed: {e}")
             self.finished.emit(-1, "", str(e))
-
 
 class UpdatePromptDialog(QDialog):
     def __init__(self, current_version, new_version, changelog, parent=None):

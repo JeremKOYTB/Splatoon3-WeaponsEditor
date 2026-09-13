@@ -6,18 +6,27 @@ import byml
 class TreeHandler:
     @staticmethod
     def populate_tree(tree_w, data, auto_expand=False):
+        tree_w.setUpdatesEnabled(False)
+        tree_w.blockSignals(True)
         tree_w.clear()
+        
         TreeHandler.add_items(tree_w.invisibleRootItem(), data)
+        
+        tree_w.blockSignals(False)
+        tree_w.setUpdatesEnabled(True)
         
         if auto_expand:
             tree_w.expandAll()
         else:
             for i in range(tree_w.topLevelItemCount()):
                 root_item = tree_w.topLevelItem(i)
-                root_item.setExpanded(True)
-                if root_item.text(0) == "GameParameters":
-                    for j in range(root_item.childCount()):
-                        root_item.child(j).setExpanded(True)
+                if root_item:
+                    root_item.setExpanded(True)
+                    if root_item.text(0) == "GameParameters":
+                        for j in range(root_item.childCount()):
+                            child = root_item.child(j)
+                            if child:
+                                child.setExpanded(True)
 
     @staticmethod
     def _set_item_value(it, v):
@@ -32,6 +41,8 @@ class TreeHandler:
         original_type = type(v).__name__
 
         it.setFlags(it.flags() | Qt.ItemFlag.ItemIsEditable)
+        it.setData(1, Qt.ItemDataRole.UserRole + 1, original_type)
+        it.setData(1, Qt.ItemDataRole.UserRole + 4, v)
         
         if isinstance(python_val, bool) or original_type == 'Bool':
             it.setData(1, Qt.ItemDataRole.UserRole, "bool")
@@ -44,9 +55,12 @@ class TreeHandler:
             it.setText(1, str(python_val))
         else:
             it.setData(1, Qt.ItemDataRole.UserRole, "str")
-            it.setText(1, str(python_val))
-
-        it.setData(1, Qt.ItemDataRole.UserRole + 1, original_type)
+            val_str = str(python_val)
+            if len(val_str) > 250:
+                it.setText(1, val_str[:250] + "... (truncated)")
+                it.setFlags(it.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            else:
+                it.setText(1, val_str)
 
     @staticmethod
     def add_items(parent, value):
@@ -108,28 +122,31 @@ class TreeHandler:
                 orig_type = c.data(1, Qt.ItemDataRole.UserRole + 1)
                 val_str = c.text(1)
                 
-                if val_type == "empty_dict": val = {}
-                elif val_type == "empty_list": val = []
-                elif val_type == "none": val = None
-                elif val_type == "int":
-                    int_val = int(val_str)
-                    if orig_type == 'UInt' and hasattr(byml, 'UInt'): val = byml.UInt(int_val)
-                    elif orig_type == 'Int64' and hasattr(byml, 'Int64'): val = byml.Int64(int_val)
-                    elif orig_type == 'UInt64' and hasattr(byml, 'UInt64'): val = byml.UInt64(int_val)
-                    elif hasattr(byml, 'Int'): val = byml.Int(int_val)
-                    else: val = int_val
-                elif val_type == "float":
-                    float_val = float(val_str.replace(' ', '').replace(',', '.'))
-                    if orig_type == 'Double' and hasattr(byml, 'Double'): val = byml.Double(float_val)
-                    elif hasattr(byml, 'Float'): val = byml.Float(float_val)
-                    else: val = float_val
-                elif val_type == "bool":
-                    bool_val = (val_str == "True")
-                    if hasattr(byml, 'Bool'): val = byml.Bool(bool_val)
-                    else: val = bool_val
+                if val_str.endswith("... (truncated)"):
+                    val = c.data(1, Qt.ItemDataRole.UserRole + 4)
                 else:
-                    if hasattr(byml, 'String'): val = byml.String(val_str)
-                    else: val = val_str
+                    if val_type == "empty_dict": val = {}
+                    elif val_type == "empty_list": val = []
+                    elif val_type == "none": val = None
+                    elif val_type == "int":
+                        int_val = int(val_str)
+                        if orig_type == 'UInt' and hasattr(byml, 'UInt'): val = byml.UInt(int_val)
+                        elif orig_type == 'Int64' and hasattr(byml, 'Int64'): val = byml.Int64(int_val)
+                        elif orig_type == 'UInt64' and hasattr(byml, 'UInt64'): val = byml.UInt64(int_val)
+                        elif hasattr(byml, 'Int'): val = byml.Int(int_val)
+                        else: val = int_val
+                    elif val_type == "float":
+                        float_val = float(val_str.replace(' ', '').replace(',', '.'))
+                        if orig_type == 'Double' and hasattr(byml, 'Double'): val = byml.Double(float_val)
+                        elif hasattr(byml, 'Float'): val = byml.Float(float_val)
+                        else: val = float_val
+                    elif val_type == "bool":
+                        bool_val = (val_str == "True")
+                        if hasattr(byml, 'Bool'): val = byml.Bool(bool_val)
+                        else: val = bool_val
+                    else:
+                        if hasattr(byml, 'String'): val = byml.String(val_str)
+                        else: val = val_str
 
             if is_array: res.append(val)
             else: res[key] = val

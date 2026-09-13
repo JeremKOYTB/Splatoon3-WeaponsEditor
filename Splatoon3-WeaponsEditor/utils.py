@@ -49,7 +49,7 @@ if not os.path.exists(CACHE_DIR):
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE, "r") as f:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e: 
             log(f"❌ [ERROR] Cannot read config file: {e}")
@@ -57,8 +57,8 @@ def load_config():
 
 def save_config(data):
     try:
-        with open(CONFIG_FILE, "w") as f:
-            json.dump(data, f)
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
     except Exception as e: 
         log(f"❌ [ERROR] Cannot save configuration: {e}")
 

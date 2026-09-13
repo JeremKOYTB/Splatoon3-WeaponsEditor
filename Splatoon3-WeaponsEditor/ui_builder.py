@@ -1,65 +1,72 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QSplitter, 
-                             QPushButton, QComboBox, QCheckBox, QLabel, 
-                             QProgressBar, QTableWidget, QHeaderView, 
-                             QTreeWidget, QSizePolicy, QFrame, QFormLayout, QLineEdit)
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, 
+    QPushButton, QComboBox, QCheckBox, QLabel, 
+    QProgressBar, QTableWidget, QHeaderView, 
+    QTreeWidget, QSizePolicy, QFrame, QFormLayout, QLineEdit
+)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont
 from translations import t
-from components import TypeEnforcedDelegate
+from components import (
+    TypeEnforcedDelegate, AnimatedWeaponImage, AnimatedTitleLabel, WeaponTableDelegate
+)
 
 def setup_ui(win):
     cw = QWidget()
     win.setCentralWidget(cw)
     layout = QHBoxLayout(cw)
-    layout.setContentsMargins(15, 15, 15, 15) 
-    layout.setSpacing(15)
+    layout.setContentsMargins(15, 12, 15, 12) 
+    layout.setSpacing(14)
     
     splitter = QSplitter(Qt.Orientation.Horizontal)
-    splitter.setHandleWidth(10)
+    splitter.setHandleWidth(8)
     layout.addWidget(splitter)
 
     lp = QFrame()
     lp.setObjectName("Card")
-    lp.setMinimumWidth(180) 
+    lp.setMinimumWidth(260) 
     ll = QVBoxLayout(lp)
-    ll.setContentsMargins(15, 15, 15, 15)
-    ll.setSpacing(12)
+    ll.setContentsMargins(12, 12, 12, 12)
+    ll.setSpacing(10)
     
     win.btn_open = QPushButton("")
     win.btn_open.clicked.connect(win.load_pack)
-    win.btn_open.setMinimumHeight(40)
+    win.btn_open.setFixedHeight(38)
+    win.btn_open.setStyleSheet("font-weight: bold;")
     ll.addWidget(win.btn_open)
 
     win.btn_import_romfs = QPushButton("")
     win.btn_import_romfs.clicked.connect(win.import_local_romfs)
-    win.btn_import_romfs.setMinimumHeight(40)
+    win.btn_import_romfs.setFixedHeight(38)
     win.btn_import_romfs.setStyleSheet("""
-        QPushButton { background-color: #8e44ad; color: white; font-weight: bold; border-radius: 6px; border: 1px solid #732d91;}
-        QPushButton:hover { background-color: #732d91; }
+        QPushButton { background-color: #8e44ad; color: white; font-weight: bold; border-radius: 6px; border: none; }
+        QPushButton:hover { background-color: #7d3c98; }
     """)
     ll.addWidget(win.btn_import_romfs)
 
     win.btn_compare = QPushButton("")
     win.btn_compare.clicked.connect(win.perform_comparison)
-    win.btn_compare.setMinimumHeight(40)
+    win.btn_compare.setFixedHeight(38)
     win.btn_compare.setStyleSheet("""
-        QPushButton { background-color: #34495e; color: white; font-weight: bold; border-radius: 6px; border: 1px solid #2c3e50;}
+        QPushButton { background-color: #34495e; color: white; font-weight: bold; border-radius: 6px; border: none; }
         QPushButton:hover { background-color: #2c3e50; }
     """)
     ll.addWidget(win.btn_compare)
 
     filter_layout = QVBoxLayout()
-    filter_layout.setSpacing(10)
+    filter_layout.setSpacing(8)
     
     win.search_bar = QLineEdit()
+    win.search_bar.setFixedHeight(32)
     win.search_bar.textChanged.connect(win.on_search_changed)
     filter_layout.addWidget(win.search_bar)
     
     form_layout = QFormLayout()
-    form_layout.setSpacing(10)
+    form_layout.setSpacing(8)
     
     win.lbl_filter = QLabel("")
     win.combo_filter = QComboBox()
+    win.combo_filter.setFixedHeight(32)
     win.combo_filter.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     
     win.combo_filter.addItem("", "all")
@@ -74,7 +81,7 @@ def setup_ui(win):
     filter_layout.addLayout(form_layout)
     
     chks_layout = QHBoxLayout()
-    chks_layout.setSpacing(15)
+    chks_layout.setSpacing(10)
     
     def add_wrapped_chk(attr_name, callback):
         container = QWidget()
@@ -107,18 +114,13 @@ def setup_ui(win):
         setattr(win, attr_name, chk)
         setattr(win, f"{attr_name}_lbl", lbl)
         setattr(win, f"{attr_name}_container", container)
-        
         chks_layout.addWidget(container, 1)
 
     add_wrapped_chk("chk_hide_filenames", win.on_hide_filenames_toggled)
-    
     add_wrapped_chk("chk_hide_dummy", win.on_hide_dummy_toggled)
-    sp = win.chk_hide_dummy_container.sizePolicy()
-    sp.setRetainSizeWhenHidden(True)
-    win.chk_hide_dummy_container.setSizePolicy(sp)
-    win.chk_hide_dummy_container.setVisible(False)
-    
     add_wrapped_chk("chk_auto_expand", win.on_auto_expand_toggled)
+    
+    win.chk_hide_dummy_container.setVisible(True)
     
     filter_layout.addLayout(chks_layout)
     ll.addLayout(filter_layout)
@@ -131,7 +133,7 @@ def setup_ui(win):
     win.progress_lbl.setObjectName("ProgressLabel")
     
     win.progress_bar = QProgressBar()
-    win.progress_bar.setFixedHeight(12)
+    win.progress_bar.setFixedHeight(10)
     win.progress_bar.setTextVisible(False)
     
     prog_layout.addWidget(win.progress_lbl)
@@ -149,22 +151,25 @@ def setup_ui(win):
     win.table_w.horizontalHeader().setVisible(False)
     win.table_w.verticalHeader().setVisible(False)
     win.table_w.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-    win.table_w.setColumnWidth(0, 30)
+    win.table_w.setColumnWidth(0, 28)
     win.table_w.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
     win.table_w.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
     win.table_w.setShowGrid(False)
     win.table_w.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     win.table_w.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     win.table_w.customContextMenuRequested.connect(win.on_table_context_menu)
-    win.table_w.setMinimumWidth(150) 
-    win.table_w.setIconSize(QSize(28, 28))
+    win.table_w.setMinimumWidth(180) 
     win.table_w.verticalHeader().setDefaultSectionSize(36)
     win.table_w.currentItemChanged.connect(win.on_table_current_changed)
     win.table_w.cellClicked.connect(win.on_cell_clicked)
     
+    win.weapon_delegate = WeaponTableDelegate(win.table_w)
+    win.table_w.setItemDelegate(win.weapon_delegate)
+    
     ll.addWidget(win.table_w, 1)
     
     win.btn_update = QPushButton(f"Splatoon 3 Weapons Editor (v{win.APP_VERSION})")
+    win.btn_update.setFixedHeight(34)
     win.btn_update.clicked.connect(win.launch_updater)
     ll.addWidget(win.btn_update)
     
@@ -172,48 +177,71 @@ def setup_ui(win):
 
     rp = QFrame()
     rp.setObjectName("Card")
-    rp.setMinimumWidth(280) 
+    rp.setMinimumWidth(320) 
     rl = QVBoxLayout(rp)
-    rl.setContentsMargins(15, 15, 15, 15)
+    rl.setContentsMargins(14, 14, 14, 14)
     rl.setSpacing(12)
     
-    info_l = QHBoxLayout()
+    win.weapon_card = QFrame()
+    win.weapon_card.setObjectName("weapon_card")
+    win.weapon_card.setStyleSheet("""
+        #weapon_card {
+            background-color: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            padding: 8px;
+        }
+    """)
+    card_l = QHBoxLayout(win.weapon_card)
+    card_l.setContentsMargins(14, 10, 14, 10)
+    card_l.setSpacing(16)
+    card_l.setAlignment(Qt.AlignmentFlag.AlignVCenter)
     
-    win.img_lbl = QLabel()
-    win.img_lbl.setFixedSize(128, 128)
+    win.img_lbl = AnimatedWeaponImage()
+    win.img_lbl.setFixedSize(110, 110)
     win.img_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    win.img_lbl.setStyleSheet("border: 1px solid rgba(0, 0, 0, 100); background-color: rgba(0, 0, 0, 60); border-radius: 8px;")
-    info_l.addWidget(win.img_lbl)
+    win.img_lbl.setStyleSheet("""
+        background-color: rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+    """)
+    card_l.addWidget(win.img_lbl)
     
-    name_layout = QVBoxLayout()
+    info_vbox = QVBoxLayout()
+    info_vbox.setContentsMargins(0, 0, 0, 0)
+    info_vbox.setSpacing(4)
+    info_vbox.setAlignment(Qt.AlignmentFlag.AlignVCenter)
     
-    win.name_lbl = QLabel("")
-    win.name_lbl.setFixedHeight(95)
-    win.name_lbl.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-    win.name_lbl.setFont(QFont("Segoe UI Variable", 12))
+    win.name_lbl = AnimatedTitleLabel("")
+    win.name_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    win.name_lbl.setFont(QFont("Segoe UI Variable", 12, QFont.Weight.Bold))
     win.name_lbl.setTextFormat(Qt.TextFormat.RichText)
     win.name_lbl.setWordWrap(True)
-    win.name_lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-    name_layout.addWidget(win.name_lbl)
+    info_vbox.addWidget(win.name_lbl)
     
-    lang_layout = QHBoxLayout()
+    info_vbox.addSpacing(8)
+
+    lang_row = QHBoxLayout()
+    lang_row.setContentsMargins(0, 2, 0, 0)
+    lang_row.setSpacing(8)
     win.lbl_lang = QLabel("")
-    lang_layout.addWidget(win.lbl_lang)
+    win.lbl_lang.setStyleSheet("color: #b0b0b8; font-size: 11px;")
+    lang_row.addWidget(win.lbl_lang)
+    
     win.lang_combo = QComboBox()
+    win.lang_combo.setFixedHeight(28)
     win.lang_combo.addItems(list(win.languages.keys()))
     win.lang_combo.currentTextChanged.connect(win.on_language_changed)
-    lang_layout.addWidget(win.lang_combo)
-    lang_layout.addStretch()
+    lang_row.addWidget(win.lang_combo)
+    lang_row.addStretch()
     
-    name_layout.addLayout(lang_layout)
-    name_layout.addStretch()
+    info_vbox.addLayout(lang_row)
+    card_l.addLayout(info_vbox, 1)
     
-    info_l.addLayout(name_layout)
-    info_l.addStretch()
-    rl.addLayout(info_l)
+    rl.addWidget(win.weapon_card)
 
     win.tree_w = QTreeWidget()
-    win.tree_w.setColumnWidth(0, 350)
+    win.tree_w.setColumnWidth(0, 360)
     win.tree_w.setAlternatingRowColors(True)
     win.tree_w.header().setStretchLastSection(True)
     win.delegate = TypeEnforcedDelegate(win.tree_w)
@@ -226,15 +254,15 @@ def setup_ui(win):
 
     win.btn_save = QPushButton("")
     win.btn_save.clicked.connect(win.save_pack)
+    win.btn_save.setFixedHeight(40)
     win.btn_save.setStyleSheet("""
-        QPushButton { background-color: #2ecc71; color: white; padding: 12px; font-weight: bold; border-radius: 6px; border: none; }
-        QPushButton:hover { background-color: #27ae60; }
+        QPushButton { background-color: #27ae60; color: white; font-size: 11pt; font-weight: bold; border-radius: 6px; border: none; }
+        QPushButton:hover { background-color: #2ecc71; }
     """)
     rl.addWidget(win.btn_save)
 
     splitter.addWidget(rp)
     splitter.setSizes([450, 850])
-
 
 def update_ui_texts(win):
     win.setWindowTitle(t("window_title"))
@@ -278,11 +306,11 @@ def update_ui_texts(win):
     win.combo_filter.blockSignals(False)
 
     if not win.pack_manager.sarc:
-        win.name_lbl.setText(t("lbl_wait_archive"))
+        win.name_lbl.setText(t("lbl_wait_archive"), animate=False)
         win.count_lbl.setText(t("count_info", 0, 0, 0, 0))
     else:
         win.refresh_file_list()
         if win.current_byml_name:
             win.refresh_weapon_ui(win.current_byml_name)
         else:
-            win.name_lbl.setText(t("lbl_archive_loaded"))
+            win.name_lbl.setText(t("lbl_archive_loaded"), animate=False)

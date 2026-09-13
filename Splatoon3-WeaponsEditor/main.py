@@ -13,15 +13,19 @@ import shutil
 from utils import install_requirements
 install_requirements()
 
-from utils import (log, CACHE_DIR, get_last_dir, set_last_dir, get_favorites, save_favorites, 
-                   get_saved_language, save_language, get_hide_dummy, save_hide_dummy, 
-                   get_hide_filenames, save_hide_filenames, get_hide_warning, save_hide_warning)
+from utils import (
+    log, CACHE_DIR, get_last_dir, set_last_dir, get_favorites, save_favorites, 
+    get_saved_language, save_language, get_hide_dummy, save_hide_dummy, 
+    get_hide_filenames, save_hide_filenames, get_hide_warning, save_hide_warning
+)
 
 import darkdetect
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QMessageBox, QFileDialog, QTableWidgetItem, 
-                             QMenu, QDialog, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, 
-                             QWidgetAction, QWidget, QSizePolicy, QMenuBar, QCheckBox)
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QMessageBox, QFileDialog, QTableWidgetItem, 
+    QMenu, QDialog, QLabel, QVBoxLayout, QHBoxLayout, QPushButton, 
+    QWidgetAction, QWidget, QSizePolicy, QMenuBar, QCheckBox
+)
 from PyQt6.QtGui import QPixmap, QColor, QBrush, QIcon, QImage, QPainter, QAction
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QByteArray, QSize, QEvent
 
@@ -30,8 +34,10 @@ from translations import t, TEXTS
 import ui_builder
 from tree_handler import TreeHandler
 from engine import SplatoonPackManager
-from components import (DiffDialog, CacheDialog, CacheBuilderWorker, ImageManager, 
-                        UpdateCheckWorker, UpdatePromptDialog)
+from components import (
+    DiffDialog, CacheDialog, ImageManager, 
+    UpdateCheckWorker, UpdatePromptDialog, ProgressiveCacheWorker
+)
 from splatoon_data import SplatoonDataManager, compare_dicts, parse_node
 from romfs_builder import RomFSBuilderWorker
 from editor_features import EditorFeaturesMixin
@@ -89,6 +95,7 @@ def get_stylesheet(is_dark):
         QTableWidget::item:selected, QTableWidget::item:selected:!active { background-color: #0078D7; color: white; border: none; outline: none; }
         QTableWidget::item:hover { background-color: rgba(255, 255, 255, 20); }
         QTreeWidget:focus { outline: none; }
+        QTreeWidget QLineEdit { background-color: #2b2b30; color: #ffffff; border: 1px solid #0078D7; border-radius: 2px; padding: 1px 4px; margin: 0px; }
         QMenu { background-color: #2c3e50; color: white; border: 1px solid #34495e; }
         QMenu::item:selected { background-color: #3498db; }
         #btnSocial { background-color: transparent; border: none; padding: 2px; border-radius: 4px; }
@@ -106,22 +113,23 @@ def get_stylesheet(is_dark):
         QFrame#Card { background-color: rgba(255, 255, 255, 180); border-radius: 8px; border: 1px solid rgba(0, 0, 0, 30); }
         QPushButton { border-radius: 6px; padding: 6px 14px; border: 1px solid rgba(0, 0, 0, 40); background-color: rgba(255, 255, 255, 255); outline: none; color: #1D1D1F; }
         QPushButton:focus { outline: none; }
-        QPushButton:hover { background-color: rgba(0, 0, 0, 10); }
-        QPushButton:pressed { background-color: rgba(0, 0, 0, 20); }
+        QPushButton:hover { background-color: rgba(0, 10); }
+        QPushButton:pressed { background-color: rgba(0, 20); }
         QComboBox, QLineEdit { border-radius: 6px; padding: 5px; border: 1px solid rgba(0, 0, 0, 40); background-color: rgba(255, 255, 255, 255); color: #1D1D1F; }
         QComboBox::drop-down { border: none; }
         QTableWidget, QTreeWidget { border: none; background-color: transparent; outline: none; color: #1D1D1F; }
         QTableWidget::item { padding: 4px; background-color: transparent; border: none; }
         QTableWidget::item:selected, QTableWidget::item:selected:!active { background-color: #0078D7; color: white; border: none; outline: none; }
-        QTableWidget::item:hover { background-color: rgba(0, 0, 0, 10); }
+        QTableWidget::item:hover { background-color: rgba(0, 10); }
         QTreeWidget:focus { outline: none; }
+        QTreeWidget QLineEdit { background-color: #ffffff; color: #1D1D1F; border: 1px solid #0078D7; border-radius: 2px; padding: 1px 4px; margin: 0px; }
         QMenu { background-color: #ffffff; color: #1D1D1F; border: 1px solid #cccccc; }
         QMenu::item:selected { background-color: #0078D7; color: white; }
         #btnSocial { background-color: transparent; border: none; padding: 2px; border-radius: 4px; }
-        #btnSocial:hover { background-color: rgba(0, 0, 0, 10); }
+        #btnSocial:hover { background-color: rgba(0, 10); }
         QMenuBar { border-bottom: 1px solid rgba(0, 0, 0, 40); background-color: transparent; }
         QMenuBar::item { padding: 6px 12px; background-color: transparent; border: none; outline: none; color: #1D1D1F; }
-        QMenuBar::item:selected { background-color: rgba(0, 0, 0, 10); border-radius: 4px; }
+        QMenuBar::item:selected { background-color: rgba(0, 10); border-radius: 4px; }
         QHeaderView::section { background-color: rgba(240, 240, 245, 255); color: #1D1D1F; padding: 4px; border: none; border-bottom: 1px solid rgba(0, 0, 0, 40); border-right: 1px solid rgba(0, 0, 0, 40); }
         #CountLabel { color: #555555; font-weight: bold; }
         #ProgressLabel { font-size: 11px; color: #666666; font-weight: bold; }
@@ -131,7 +139,11 @@ class AboutDialog(QDialog):
     def __init__(self, parent, is_dark, version):
         super().__init__(parent)
         self.setWindowTitle(t("menu_about"))
-        self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowCloseButtonHint | Qt.WindowType.MSWindowsFixedSizeDialogHint)
+        self.setWindowFlags(
+            Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint | 
+            Qt.WindowType.WindowTitleHint | Qt.WindowType.WindowCloseButtonHint | 
+            Qt.WindowType.MSWindowsFixedSizeDialogHint
+        )
         self.is_dark = is_dark
         self.version = version
         self.init_ui()
@@ -206,7 +218,6 @@ class AboutDialog(QDialog):
         QApplication.clipboard().setText("jeremko")
         QMessageBox.information(self, t("msg_copied"), t("msg_discord_copied"))
 
-
 class RSDBCheckWorker(QThread):
     finished = pyqtSignal(bool, str, str, str, str)
     
@@ -256,7 +267,10 @@ class RSDBCheckWorker(QThread):
         remote_version = "0.0.0"
         download_url = ""
         try:
-            req = urllib.request.Request("https://api.github.com/repos/JeremKOYTB/Splatoon3-RSDBEditor/releases/latest", headers={'User-Agent': 'Mozilla/5.0'})
+            req = urllib.request.Request(
+                "https://api.github.com/repos/JeremKOYTB/Splatoon3-RSDBEditor/releases/latest", 
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
             with urllib.request.urlopen(req, timeout=10) as response:
                 data = json.loads(response.read().decode())
                 remote_version = data.get("tag_name", "0.0.0").replace("v", "")
@@ -325,11 +339,10 @@ class RSDBDownloadWorker(QThread):
         except Exception as e:
             self.finished.emit(False, str(e), "")
 
-
 class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
     def __init__(self):
         super().__init__()
-        self.APP_VERSION = "1.1.1"
+        self.APP_VERSION = "1.1.5"
         self.resize(1300, 800)
 
         self.last_is_dark = darkdetect.isDark()
@@ -449,14 +462,13 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
                 font-weight: bold; 
                 font-size: 10pt; 
                 border-radius: 4px; 
-                border: 1px solid #1c5980;
-                padding: 0px 15px;
+                border: 1px solid #1c5980; 
+                padding: 0px 15px; 
             }
             QPushButton:hover { background-color: #1c5980; }
         """)
         
         top_layout.addWidget(self.btn_rsdb, alignment=Qt.AlignmentFlag.AlignVCenter)
-        
         top_layout.addStretch()
         
         self.setMenuWidget(self.top_bar)
@@ -583,8 +595,8 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
         reply = QMessageBox.question(
             self, 
             t("menu_reset"), 
-            t("msg_reset_confirm"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            t("msg_reset_confirm"), 
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
             QMessageBox.StandardButton.No
         )
         
@@ -742,12 +754,10 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
                 break
                 
         if self.has_actual_dummies:
-            self.chk_hide_dummy_container.setVisible(True)
             if not is_checked:
                 self.combo_filter.addItem(t("filter_dummy"), "dummy")
-        else:
-            self.chk_hide_dummy_container.setVisible(False)
-            
+                
+        self.chk_hide_dummy_container.setVisible(True)
         self.combo_filter.blockSignals(False)
 
     def on_hide_dummy_toggled(self, state):
@@ -879,28 +889,34 @@ class SplatoonParamEditor(QMainWindow, EditorFeaturesMixin):
 
     def on_image_downloaded(self, image):
         if not image.isNull():
-            scaled = image.scaled(128, 128, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            square = QImage(128, 128, QImage.Format.Format_ARGB32_Premultiplied)
+            scaled = image.scaled(96, 96, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            square = QImage(110, 110, QImage.Format.Format_ARGB32_Premultiplied)
             square.fill(Qt.GlobalColor.transparent)
             
             painter = QPainter(square)
-            x = (128 - scaled.width()) // 2
-            y = (128 - scaled.height()) // 2
-            painter.drawImage(x, y, scaled)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+            painter.drawImage((110 - scaled.width()) // 2, (110 - scaled.height()) // 2, scaled)
             painter.end()
             
-            self.img_lbl.setPixmap(QPixmap.fromImage(square))
+            pix = QPixmap.fromImage(square)
+            if hasattr(self.img_lbl, 'setPixmap'):
+                try:
+                    self.img_lbl.setPixmap(pix, animate=True)
+                except TypeError:
+                    self.img_lbl.setPixmap(pix)
+            else:
+                self.img_lbl.setPixmap(pix)
         else:
             self.img_lbl.clear()
             self.img_lbl.setText(t("img_unavail"))
-
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     
     if os.name == 'nt':
         import ctypes
-        myappid = 'jeremkoytb.splatoon3weaponseditor.1.1.1'
+        myappid = 'jeremkoytb.splatoon3weaponseditor.1.1.5'
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     
     app = QApplication(sys.argv)
